@@ -3,13 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Dashboard</title>
+<title>VAD-e Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<!-- Firebase JS SDK (compat) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Outfit',sans-serif;min-height:100vh;background:#eef1f7;color:#111;overflow-x:hidden;-webkit-font-smoothing:antialiased}
 
+/* ── Blobs ── */
 .blob{position:fixed;border-radius:50%;filter:blur(90px);z-index:0;pointer-events:none}
 .b1{width:clamp(280px,50vw,600px);height:clamp(280px,50vw,600px);background:radial-gradient(circle,#bfdbfe,#93c5fd);top:-12%;left:-8%;opacity:.5;animation:b1m 15s ease-in-out infinite}
 .b2{width:clamp(240px,44vw,520px);height:clamp(240px,44vw,520px);background:radial-gradient(circle,#e9d5ff,#c4b5fd);top:35%;right:-10%;opacity:.42;animation:b2m 12s ease-in-out infinite}
@@ -18,8 +25,26 @@ body{font-family:'Outfit',sans-serif;min-height:100vh;background:#eef1f7;color:#
 @keyframes b2m{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-35px,20px) scale(1.05)}}
 @keyframes b3m{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(20px,-35px) scale(1.09)}}
 
+/* ── Glass ── */
 .glass{background:rgba(255,255,255,.26);backdrop-filter:blur(30px) saturate(160%);-webkit-backdrop-filter:blur(30px) saturate(160%);border:1px solid rgba(255,255,255,.6);box-shadow:0 8px 32px rgba(0,0,0,.06),inset 0 1.5px 0 rgba(255,255,255,.75),inset 0 -1px 0 rgba(0,0,0,.03)}
 
+/* ── Waiting overlay ── */
+.waiting-screen{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;
+  background:rgba(238,241,247,.92);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)}
+.waiting-screen.hidden{display:none}
+.waiting-box{text-align:center;padding:48px 40px;border-radius:32px;max-width:420px;width:90%}
+.waiting-icon{font-size:64px;margin-bottom:20px;display:block}
+.waiting-spinner{width:48px;height:48px;border:4px solid rgba(99,102,241,.15);border-top-color:#6366f1;
+  border-radius:50%;animation:spin 0.9s linear infinite;margin:0 auto 20px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.waiting-title{font-size:22px;font-weight:800;color:#1e293b;margin-bottom:8px}
+.waiting-sub{font-size:14px;color:#64748b;line-height:1.6;margin-bottom:20px}
+.waiting-hint{font-size:12px;color:#94a3b8;display:flex;align-items:center;justify-content:center;gap:6px}
+.waiting-dot{width:6px;height:6px;border-radius:50%;background:#6366f1;animation:wdot 1.4s ease infinite}
+.waiting-dot:nth-child(2){animation-delay:.2s}.waiting-dot:nth-child(3){animation-delay:.4s}
+@keyframes wdot{0%,80%,100%{transform:scale(0);opacity:.3}40%{transform:scale(1);opacity:1}}
+
+/* ── Topbar ── */
 .topbar{background:rgba(255,255,255,.3);backdrop-filter:blur(34px) saturate(180%);-webkit-backdrop-filter:blur(34px) saturate(180%);border-bottom:1px solid rgba(255,255,255,.55);box-shadow:0 2px 18px rgba(0,0,0,.05);padding:13px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
 .topbar-brand{font-size:19px;font-weight:800;letter-spacing:-.3px;color:#1e293b}
 .topbar-right{display:flex;align-items:center;gap:16px}
@@ -27,20 +52,6 @@ body{font-family:'Outfit',sans-serif;min-height:100vh;background:#eef1f7;color:#
 .topbar-live{font-size:12px;font-weight:600;color:#64748b;display:flex;align-items:center;gap:5px}
 .live-dot{width:6px;height:6px;border-radius:50%;background:#6366f1;animation:pulse 2s ease infinite}
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.8)}}
-
-/* ── IP Banner ── */
-#ipBanner{background:rgba(255,255,255,.85);backdrop-filter:blur(20px);border-bottom:1px solid rgba(99,102,241,.15);padding:10px 20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;font-size:13px;font-weight:500;color:#334155}
-#ipBanner input{height:36px;border:1.5px solid rgba(99,102,241,.25);border-radius:10px;padding:0 12px;font-size:13px;font-family:'Outfit',sans-serif;outline:none;background:rgba(255,255,255,.8);color:#0f172a;min-width:180px;transition:border-color .14s}
-#ipBanner input:focus{border-color:#6366f1;box-shadow:0 0 0 3px rgba(99,102,241,.1)}
-#connectBtn{height:36px;padding:0 16px;border:none;border-radius:10px;font-size:13px;font-weight:600;font-family:'Outfit',sans-serif;cursor:pointer;transition:all .14s}
-#connectBtn.state-connect{background:rgba(99,102,241,.88);color:#fff}
-#connectBtn.state-connect:hover{background:rgba(79,70,229,.95)}
-#connectBtn.state-disconnect{background:rgba(239,68,68,.85);color:#fff}
-#connectBtn.state-disconnect:hover{background:rgba(220,38,38,.92)}
-#ipStatus{font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;transition:all .2s}
-#ipStatus.ok{background:rgba(34,197,94,.1);color:#15803d}
-#ipStatus.err{background:rgba(239,68,68,.1);color:#b91c1c}
-#ipStatus.wait{background:rgba(99,102,241,.1);color:#4338ca}
 
 .wrap{max-width:1360px;margin:0 auto;padding:14px;position:relative;z-index:1}
 
@@ -75,8 +86,6 @@ body{font-family:'Outfit',sans-serif;min-height:100vh;background:#eef1f7;color:#
 .pb{background:rgba(99,102,241,.1);color:#4338ca;border:1px solid rgba(99,102,241,.2)}
 .pm{background:rgba(168,85,247,.1);color:#7e22ce;border:1px solid rgba(168,85,247,.2)}
 .pg-dim{background:rgba(148,163,184,.08);color:#64748b;border:1px solid rgba(148,163,184,.2)}
-.pinfo{background:rgba(99,102,241,.08);color:#4338ca;border:1px solid rgba(99,102,241,.18)}
-.pwait{background:rgba(99,102,241,.08);color:#4338ca;border:1px solid rgba(99,102,241,.18)}
 
 /* ── Buttons ── */
 .btn{border:none;border-radius:999px;padding:9px 20px;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s ease;display:inline-flex;align-items:center;justify-content:center;gap:5px;font-family:'Outfit',sans-serif;white-space:nowrap;line-height:1;text-decoration:none}
@@ -86,21 +95,22 @@ body{font-family:'Outfit',sans-serif;min-height:100vh;background:#eef1f7;color:#
 .btn-d{background:rgba(239,68,68,.85);color:#fff;box-shadow:0 4px 14px rgba(239,68,68,.25),inset 0 1px 0 rgba(255,255,255,.25)}
 .btn-d:hover{background:rgba(220,38,38,.92)}
 .btn-b{background:rgba(59,130,246,.85);color:#fff;box-shadow:0 4px 14px rgba(59,130,246,.25),inset 0 1px 0 rgba(255,255,255,.25)}
-.btn-b:hover{background:rgba(37,99,235,.92)}
 .btn-a{background:rgba(245,158,11,.85);color:#fff;box-shadow:0 4px 14px rgba(245,158,11,.25),inset 0 1px 0 rgba(255,255,255,.25)}
-.btn-a:hover{background:rgba(217,119,6,.92)}
 .btn-g{background:rgba(255,255,255,.5);color:#374151;border:1px solid rgba(255,255,255,.7);backdrop-filter:blur(8px);box-shadow:0 2px 8px rgba(0,0,0,.05)}
 .btn-g:hover{background:rgba(255,255,255,.7)}
 .btn.sm{padding:6px 13px;font-size:12px}
 .btn.icon-only{padding:6px 9px;font-size:12px}
 
+/* ── Action bar ── */
 .abar{margin:10px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 
+/* ── Empty state ── */
 .empty{text-align:center;padding:48px 20px;border-radius:26px;display:none}
 .empty-ico{font-size:52px;margin-bottom:12px}
 .empty h2{font-size:20px;font-weight:700;margin-bottom:6px;color:#1e293b}
 .empty p{color:#64748b;font-size:14px;max-width:420px;margin:0 auto 18px;line-height:1.55}
 
+/* ── Plant cards ── */
 .cards{display:flex;flex-direction:column;gap:11px;margin-bottom:12px}
 .card{border-radius:26px;transition:transform .18s ease,box-shadow .18s ease}
 .card:hover{transform:translateY(-2px);box-shadow:0 12px 38px rgba(0,0,0,.09),inset 0 1.5px 0 rgba(255,255,255,.7)}
@@ -145,6 +155,7 @@ body{font-family:'Outfit',sans-serif;min-height:100vh;background:#eef1f7;color:#
 .live-item .live-val.dim{color:#94a3b8}
 .live-approx{font-size:9px;color:#b0b8c8;font-weight:500;margin-top:1px}
 
+/* ── Modals ── */
 .overlay{position:fixed;inset:0;background:rgba(15,23,42,.25);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);display:none;align-items:flex-start;justify-content:center;padding:14px;z-index:999;overflow-y:auto}
 .overlay.show{display:flex}
 .modal{width:min(780px,100%);background:rgba(255,255,255,.93);backdrop-filter:blur(48px) saturate(200%);-webkit-backdrop-filter:blur(48px) saturate(200%);border:1px solid rgba(255,255,255,.82);border-radius:30px;padding:26px 26px 30px;box-shadow:0 20px 56px rgba(0,0,0,.12),inset 0 1.5px 0 rgba(255,255,255,.95);animation:mIn .18s ease;margin:auto}
@@ -159,11 +170,10 @@ body{font-family:'Outfit',sans-serif;min-height:100vh;background:#eef1f7;color:#
 .field label{display:block;font-size:9px;font-weight:700;letter-spacing:1.3px;text-transform:uppercase;color:#94a3b8;margin-bottom:6px}
 .field input,.field select{width:100%;height:42px;border:1.5px solid rgba(0,0,0,.08);border-radius:13px;background:rgba(255,255,255,.72);font-size:13.5px;padding:0 13px;outline:none;transition:border-color .14s,box-shadow .14s;font-family:'Outfit',sans-serif;color:#0f172a}
 .field input:focus,.field select:focus{border-color:#6366f1;background:rgba(255,255,255,.95);box-shadow:0 0 0 3px rgba(99,102,241,.1)}
-.field input:disabled,.field select:disabled{opacity:.42;cursor:not-allowed}
-select option:disabled{color:#bbb}
 .field-hint{font-size:10.5px;color:#94a3b8;margin-top:4px;line-height:1.4}
 .m-actions{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:20px}
 
+/* ── Info modal ── */
 .info-modal{width:min(840px,100%)}
 .info-header{display:flex;align-items:center;gap:13px;margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid rgba(0,0,0,.05)}
 .info-icon{font-size:38px}
@@ -183,11 +193,15 @@ select option:disabled{color:#bbb}
 .sess-table th{font-size:8.5px;font-weight:700;letter-spacing:1.3px;text-transform:uppercase;color:#b0b8c8;padding:5px 9px;text-align:left;border-bottom:1px solid rgba(0,0,0,.05)}
 .sess-table td{font-size:12px;font-weight:500;color:#374151;padding:8px 9px;border-bottom:1px solid rgba(0,0,0,.04)}
 .sess-table tr:last-child td{border-bottom:none}
-.sess-table tr:hover td{background:rgba(0,0,0,.015)}
 .sess-badge{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:999px;font-size:10px;font-weight:600}
 .sess-badge.auto{background:rgba(99,102,241,.1);color:#4338ca}
 .sess-badge.manual{background:rgba(59,130,246,.1);color:#1d4ed8}
 .sess-empty{text-align:center;padding:24px;color:#94a3b8;font-size:12.5px}
+
+/* ── Pending command toast ── */
+.cmd-toast{position:fixed;bottom:20px;right:20px;background:rgba(15,23,42,.92);color:#e2e8f0;padding:12px 18px;border-radius:14px;font-size:13px;font-weight:500;z-index:9998;display:none;align-items:center;gap:10px;box-shadow:0 8px 24px rgba(0,0,0,.2);backdrop-filter:blur(8px)}
+.cmd-toast.show{display:flex}
+.cmd-toast-spinner{width:14px;height:14px;border:2px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
 
 @media(max-width:1050px){.sstrip{grid-template-columns:1fr 1fr}.lower{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(3,1fr)}.fgrid{grid-template-columns:1fr 1fr}.stat-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:640px){.sstrip{grid-template-columns:1fr}.c-head{flex-direction:column}.c-badges{justify-content:flex-start}.topbar-brand{font-size:16px}.topbar-clock{font-size:11px}.metrics{grid-template-columns:1fr 1fr}.fgrid{grid-template-columns:1fr}.frow2{grid-template-columns:1fr}.stat-grid{grid-template-columns:1fr 1fr}.c-actions{flex-wrap:wrap}}
@@ -195,20 +209,39 @@ select option:disabled{color:#bbb}
 </head>
 <body>
 
+<!-- ── Blobs ── -->
 <div class="blob b1"></div>
 <div class="blob b2"></div>
 <div class="blob b3"></div>
 
-<!-- ESP32 IP Configuration Banner -->
-<div id="ipBanner">
-  <span>🔌 ESP32 IP Address:</span>
-  <input id="espIpInput" type="text" placeholder="e.g. 192.168.1.100" value="">
-  <button id="connectBtn" class="state-connect" onclick="handleConnectBtn()">Connect</button>
-  <span id="ipStatus" class="wait">⏳ Waiting for IP</span>
+<!-- ════════════════════════════════════════════════════════════
+     WAITING FOR ESP OVERLAY
+     Shown until Firebase heartbeat is fresh (< 15 s old)
+     ════════════════════════════════════════════════════════════ -->
+<div class="waiting-screen glass" id="waitingScreen">
+  <div class="waiting-box glass">
+    <span class="waiting-icon">🌱</span>
+    <div class="waiting-spinner"></div>
+    <div class="waiting-title">Waiting for ESP32…</div>
+    <div class="waiting-sub">The device hasn't sent a heartbeat recently. Make sure it's powered on and connected to WiFi.</div>
+    <div class="waiting-hint">
+      <div class="waiting-dot"></div>
+      <div class="waiting-dot"></div>
+      <div class="waiting-dot"></div>
+      <span id="waitStatus">Connecting to Firebase</span>
+    </div>
+  </div>
 </div>
 
+<!-- ── Command sending toast ── -->
+<div class="cmd-toast" id="cmdToast">
+  <div class="cmd-toast-spinner"></div>
+  <span id="cmdToastMsg">Sending command…</span>
+</div>
+
+<!-- ── Topbar ── -->
 <div class="topbar">
-  <div class="topbar-brand">🌿 Dashboard</div>
+  <div class="topbar-brand">🌿 VAD-e Dashboard</div>
   <div class="topbar-right">
     <div class="topbar-clock" id="rtClock">--:--:-- --</div>
     <div class="topbar-live"><div class="live-dot"></div><span id="liveBadge">Connecting…</span></div>
@@ -216,18 +249,18 @@ select option:disabled{color:#bbb}
 </div>
 
 <div class="wrap">
+  <!-- ── Status strip ── -->
   <div class="sstrip">
-
-    <!-- SYSTEM -->
     <div class="glass scard">
       <div class="scard-title">System</div>
-      <div class="srow"><span class="srow-lbl">ESP32</span><span class="pill pwait" id="esp32StatusPill">⏳ Waiting</span></div>
+      <div class="srow">
+        <span class="srow-lbl">ESP32 IP</span>
+        <span class="srow-val" id="sysESPIP" style="font-family:monospace;font-size:12px;color:#6366f1">—</span>
+      </div>
       <div class="srow"><span class="srow-lbl">Uptime</span><span class="srow-val" id="sysUptime">—</span></div>
-      <div class="srow"><span class="srow-lbl">Time</span><span class="srow-val" id="sysTime">—</span></div>
+      <div class="srow"><span class="srow-lbl">Time (ESP)</span><span class="srow-val" id="sysTime">—</span></div>
       <div class="srow"><span class="srow-lbl">Plants</span><span class="srow-val" id="sysPlants">—</span></div>
     </div>
-
-    <!-- HARDWARE -->
     <div class="glass scard">
       <div class="scard-title">Hardware</div>
       <div class="srow"><span class="srow-lbl">Soil Sensor</span><span class="pill pg-dim" id="soilStatus0">Checking…</span></div>
@@ -235,8 +268,6 @@ select option:disabled{color:#bbb}
       <div class="srow"><span class="srow-lbl">Relay</span><span class="pill pg-dim" id="relayStatus0">Unknown</span></div>
       <div class="srow"><span class="srow-lbl">SD Card</span><span class="pill pr" id="sdStatus">Not Available</span></div>
     </div>
-
-    <!-- MANUAL OVERRIDE -->
     <div class="glass man-card">
       <div class="man-lbl">Manual Relay Override</div>
       <div class="tog-wrap">
@@ -246,7 +277,6 @@ select option:disabled{color:#bbb}
       </div>
       <div class="tog-hint" id="manHint">Tap to enable manual override</div>
     </div>
-
   </div>
 
   <div class="abar">
@@ -256,7 +286,7 @@ select option:disabled{color:#bbb}
   <div class="glass empty" id="emptyBox">
     <div class="empty-ico">🌱</div>
     <h2>No plants added yet</h2>
-    <p>Create your first plant profile to begin automated irrigation. Set a moisture threshold and target water volume — the flow sensor handles the rest.</p>
+    <p>Create your first plant profile to begin automated irrigation.</p>
     <button class="btn btn-p" onclick="openCreateModal()">Create First Plant</button>
   </div>
 
@@ -281,7 +311,7 @@ select option:disabled{color:#bbb}
   </div>
 </div>
 
-<!-- CREATE / EDIT MODAL -->
+<!-- ── CREATE / EDIT MODAL ── -->
 <div class="overlay" id="formOvl">
 <div class="modal">
   <div class="m-title" id="fTitle">Add New Plant</div>
@@ -291,7 +321,7 @@ select option:disabled{color:#bbb}
   <div class="fgrid">
     <div class="field"><label>Plant Name</label><input id="pName"></div>
     <div class="field"><label>Soil Sensor</label><select id="sSel"></select></div>
-    <div class="field"><label>Relay 1</label><select id="rSel"></select></div>
+    <div class="field"><label>Relay</label><select id="rSel"></select></div>
   </div>
   <div class="frow2">
     <div class="field">
@@ -314,7 +344,6 @@ select option:disabled{color:#bbb}
         <option value="12">Every 12 hours</option><option value="24" selected>Every 24 hours</option>
         <option value="48">Every 2 days</option><option value="72">Every 3 days</option>
       </select>
-      <div class="field-hint">How often to check if watering is needed</div>
     </div>
   </div>
   <div class="m-actions">
@@ -324,7 +353,7 @@ select option:disabled{color:#bbb}
 </div>
 </div>
 
-<!-- DELETE MODAL -->
+<!-- ── DELETE MODAL ── -->
 <div class="overlay" id="delOvl">
 <div class="modal sm">
   <div class="m-title">Delete Plant?</div>
@@ -336,7 +365,7 @@ select option:disabled{color:#bbb}
 </div>
 </div>
 
-<!-- MANUAL MODAL -->
+<!-- ── MANUAL MODAL ── -->
 <div class="overlay" id="manOvl">
 <div class="modal sm">
   <div class="m-title" id="manModalTitle">Manual RELAY Override</div>
@@ -345,7 +374,7 @@ select option:disabled{color:#bbb}
 </div>
 </div>
 
-<!-- PLANT INFO MODAL -->
+<!-- ── PLANT INFO MODAL ── -->
 <div class="overlay" id="infoOvl">
 <div class="modal info-modal">
   <div class="info-header">
@@ -357,8 +386,7 @@ select option:disabled{color:#bbb}
     <button class="btn btn-g sm" style="margin-left:auto" onclick="closeInfoModal()">✕ Close</button>
   </div>
   <div class="no-rtc">⏰ Session timestamps are uptime offsets — no RTC chip fitted.</div>
-  <div class="flow-info-box">💧 Volume figures marked ~ are approximate (±<span id="infoAccPct">15</span>% typical).</div>
-
+  <div class="flow-info-box">💧 Volume figures marked ~ are approximate (±15% typical).</div>
   <div class="stat-grid">
     <div class="stat-card"><div class="stat-lbl">Current Soil</div><div class="stat-val" id="iSoil">—<span class="unit">%</span></div><div class="stat-sub">moisture</div></div>
     <div class="stat-card"><div class="stat-lbl">Last Session</div><div class="stat-val" id="iLastMl">—<span class="unit">mL</span></div><div class="stat-sub" id="iLastTime">never</div><div class="stat-approx">~ approx</div></div>
@@ -371,8 +399,7 @@ select option:disabled{color:#bbb}
     <div class="stat-card"><div class="stat-lbl">Check Interval</div><div class="stat-val" id="iFreq">—<span class="unit">h</span></div><div class="stat-sub">automation cadence</div></div>
     <div class="stat-card"><div class="stat-lbl">Sessions</div><div class="stat-val" id="iSessCount">—</div><div class="stat-sub">completed</div></div>
   </div>
-
-  <div class="sess-title">💧 Session History <span style="font-size:10.5px;color:#94a3b8;font-weight:500">(most recent first · up to 20)</span></div>
+  <div class="sess-title">💧 Session History <span style="font-size:10.5px;color:#94a3b8;font-weight:500">(most recent first)</span></div>
   <div style="overflow-x:auto">
     <table class="sess-table">
       <thead><tr><th>#</th><th>Started at</th><th>Duration</th><th>~ Volume</th><th>Type</th></tr></thead>
@@ -383,398 +410,242 @@ select option:disabled{color:#bbb}
 </div>
 
 <script>
-// ===================== CONNECTION STATE =====================
-let ESP_BASE = '';
-let isConnected = false;
-let fetchInterval = null;
+// ══════════════════════════════════════════════════════════════════
+//  FIREBASE CONFIG
+//  These match what's in your vade.ino exactly.
+// ══════════════════════════════════════════════════════════════════
+const FIREBASE_CONFIG = {
+  apiKey:      "AIzaSyB8KWlGHwuIF2YvLUh0m6yKu7vjCEAJc3c",
+  databaseURL: "https://vadpro-8eb15-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId:   "vadpro-8eb15",
+  authDomain:  "vadpro-8eb15.firebaseapp.com"
+};
 
-const $ = id => document.getElementById(id);
+// How many seconds old a heartbeat can be before we show "waiting"
+const HEARTBEAT_TIMEOUT_S = 20;
 
-// ===================== IP / CONNECTION MANAGEMENT =====================
-function loadSavedIp() {
-  try {
-    const saved = localStorage.getItem('esp32_ip');
-    if (saved) {
-      $('espIpInput').value = saved;
-      // Don't auto-connect — let user press Connect
-    }
-  } catch(e) {}
-}
-
-function handleConnectBtn() {
-  if (isConnected) {
-    disconnect();
-  } else {
-    connect();
-  }
-}
-
-function connect() {
-  const raw = $('espIpInput').value.trim().replace(/^https?:\/\//, '').replace(/\/$/, '');
-  if (!raw) {
-    setIpStatus('Enter an IP address', 'err');
-    return;
-  }
-  ESP_BASE = 'http://' + raw;
-  try { localStorage.setItem('esp32_ip', raw); } catch(e) {}
-  setIpStatus('Connecting…', 'wait');
-  setEsp32Pill('connecting');
-  fetchData();
-  if (!fetchInterval) fetchInterval = setInterval(fetchData, 1500);
-}
-
-function disconnect() {
-  ESP_BASE = '';
-  isConnected = false;
-  if (fetchInterval) { clearInterval(fetchInterval); fetchInterval = null; }
-  setIpStatus('⏳ Waiting for IP', 'wait');
-  setConnectBtn(false);
-  setEsp32Pill('waiting');
-  $('liveBadge').textContent = 'Disconnected';
-  // Reset live readings
-  ['lvSoil','lvFlow','lvVol','lvPump','lvMode','lvRaw'].forEach(id => {
-    const el=$(id); el.textContent='—'; el.className='live-val dim';
-  });
-  $('lvMode').textContent = 'Auto';
-  $('sysUptime').textContent = '—';
-  $('sysPlants').textContent = '—';
-}
-
-function setConnectBtn(connected) {
-  const btn = $('connectBtn');
-  if (connected) {
-    btn.textContent = '⏹ Disconnect';
-    btn.className = 'state-disconnect';
-  } else {
-    btn.textContent = 'Connect';
-    btn.className = 'state-connect';
-  }
-}
-
-function setIpStatus(msg, cls) {
-  const el = $('ipStatus');
-  el.textContent = msg;
-  el.className = cls || '';
-}
-
-function setEsp32Pill(state) {
-  const pill = $('esp32StatusPill');
-  if (state === 'waiting') {
-    pill.textContent = '⏳ Waiting';
-    pill.className = 'pill pwait';
-  } else if (state === 'connecting') {
-    pill.textContent = '⟳ Connecting';
-    pill.className = 'pill pa';
-  } else if (state === 'connected') {
-    pill.textContent = 'Connected';
-    pill.className = 'pill pg';
-  } else if (state === 'error') {
-    pill.textContent = 'Unreachable';
-    pill.className = 'pill pr';
-  }
-}
-
-// ===================== CLOCK =====================
-let dash = null, delIdx = -1, infoIdx = -1;
-let flowAccuracyPct = 15;
+// ── State ──────────────────────────────────────────────────────
+let dash    = null;
+let delIdx  = -1;
+let infoIdx = -1;
+let db      = null;
 let clockOffset = 0;
 let clockReady  = false;
+const $ = id => document.getElementById(id);
 
+// ══════════════════════════════════════════════════════════════════
+//  FIREBASE INIT
+// ══════════════════════════════════════════════════════════════════
+firebase.initializeApp(FIREBASE_CONFIG);
+const auth = firebase.auth();
+db          = firebase.database();
+
+$('waitStatus').textContent = 'Signing in anonymously…';
+
+auth.signInAnonymously()
+  .then(() => {
+    $('waitStatus').textContent = 'Connected — waiting for ESP32 heartbeat…';
+    startListening();
+  })
+  .catch(err => {
+    $('waitStatus').textContent = 'Auth error: ' + err.message;
+    console.error('Firebase auth error', err);
+  });
+
+// ══════════════════════════════════════════════════════════════════
+//  REALTIME LISTENER  — /status
+// ══════════════════════════════════════════════════════════════════
+function startListening() {
+  db.ref('/status').on('value', snap => {
+    const raw = snap.val();
+    if (!raw) {
+      showWaiting('Firebase returned no data yet.');
+      return;
+    }
+
+    const hb   = raw.heartbeat;           // unix timestamp written by ESP
+    const nowS = Math.floor(Date.now() / 1000);
+
+    if (!hb || (nowS - hb) > HEARTBEAT_TIMEOUT_S) {
+      const ago = hb ? `${nowS - hb}s ago` : 'never';
+      showWaiting(`Last heartbeat: ${ago}. ESP32 may be offline.`);
+      return;
+    }
+
+    // ESP is alive — build the dash object from Firebase data
+    dash = buildDashFromFirebase(raw);
+    hideWaiting();
+    updateUI(dash, raw.ip);
+  });
+}
+
+// ── Convert Firebase /status shape → the same "dash" object the UI expects ──
+function buildDashFromFirebase(raw) {
+  // Firebase stores arrays as objects with numeric keys — normalise them
+  const arr = v => {
+    if (!v) return [];
+    if (Array.isArray(v)) return v;
+    return Object.keys(v).sort((a,b)=>Number(a)-Number(b)).map(k=>v[k]);
+  };
+
+  return {
+    uptime:       raw.uptime        || '—',
+    activePlants: raw.activePlants  || 0,
+    totalPlants:  raw.totalPlants   || 1,
+    manualMode:   raw.manualMode    || false,
+    sdAvailable:  raw.sdAvailable   || false,
+    rawADC:       arr(raw.rawADC),
+    sensorHealth: arr(raw.sensorHealth),
+    flowHealth:   arr(raw.flowHealth),
+    relayHealth:  arr(raw.relayHealth),
+    sensors:      arr(raw.sensors),
+    relays:       arr(raw.relays),
+    plants:       arr(raw.plants).map(p => ({
+                    ...p,
+                    sessions: arr(p && p.sessions)
+                  })),
+    alerts:       arr(raw.alerts),
+    flowAccuracyPct: 15
+  };
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  SEND COMMAND TO ESP via Firebase /commands/pending
+// ══════════════════════════════════════════════════════════════════
+function showToast(msg) {
+  $('cmdToastMsg').textContent = msg;
+  $('cmdToast').classList.add('show');
+}
+function hideToast() { $('cmdToast').classList.remove('show'); }
+
+async function sendCommand(params) {
+  showToast('Sending command…');
+  try {
+    await db.ref('/commands/pending').set({
+      ...params,
+      _ts: firebase.database.ServerValue.TIMESTAMP
+    });
+    // Toast auto-hides once ESP deletes the node (or after 3s fallback)
+    setTimeout(hideToast, 3000);
+  } catch(e) {
+    hideToast();
+    alert('Failed to send command: ' + e.message);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  WAITING SCREEN
+// ══════════════════════════════════════════════════════════════════
+function showWaiting(msg) {
+  if (msg) $('waitStatus').textContent = msg;
+  $('waitingScreen').classList.remove('hidden');
+  $('liveBadge').textContent = 'ESP offline';
+}
+function hideWaiting() {
+  $('waitingScreen').classList.add('hidden');
+  $('liveBadge').textContent = 'Live';
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  CLOCK
+// ══════════════════════════════════════════════════════════════════
 async function fetchClock() {
   try {
     const r = await fetch('https://worldtimeapi.org/api/timezone/Asia/Kolkata', {cache:'no-store'});
     const d = await r.json();
     clockOffset = new Date(d.datetime).getTime() - Date.now();
     clockReady  = true;
-  } catch(e) {
-    try {
-      const r2 = await fetch('https://worldtimeapi.org/api/ip', {cache:'no-store'});
-      const d2 = await r2.json();
-      clockOffset = new Date(d2.datetime).getTime() - Date.now();
-      clockReady  = true;
-    } catch(e2) { clockReady = false; }
-  }
+  } catch(e) { clockReady = false; }
 }
-
 function tickClock() {
   const now = clockReady ? new Date(Date.now() + clockOffset) : new Date();
-  let hr = now.getHours();
-  const ampm = hr >= 12 ? 'PM' : 'AM';
-  hr = hr % 12;
-  if (hr === 0) hr = 12;
-  const h = String(hr).padStart(2,'0');
-  const m = String(now.getMinutes()).padStart(2,'0');
-  const s = String(now.getSeconds()).padStart(2,'0');
+  let hr = now.getHours(); const ampm = hr >= 12 ? 'PM' : 'AM';
+  hr = hr % 12; if (hr === 0) hr = 12;
+  const h  = String(hr).padStart(2,'0'), m = String(now.getMinutes()).padStart(2,'0'), s = String(now.getSeconds()).padStart(2,'0');
   const mo = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][now.getMonth()];
   const dy = String(now.getDate()).padStart(2,'0');
   $('rtClock').textContent = `${h}:${m}:${s} ${ampm}  ${dy} ${mo}`;
-  const sysT = $('sysTime');
-  if (sysT) sysT.textContent = `${h}:${m} ${ampm}`;
+  const sysT = $('sysTime'); if (sysT) sysT.textContent = `${h}:${m} ${ampm}`;
 }
-
 fetchClock();
 setInterval(fetchClock, 30 * 60 * 1000);
 setInterval(tickClock, 1000);
+tickClock();
 
-// ===================== HELPERS =====================
-function mc(pct) {
-  if (pct < 0)  return '#94a3b8';
-  if (pct < 20) return '#ef4444';
-  if (pct < 40) return '#f97316';
-  if (pct < 60) return '#eab308';
-  return '#22c55e';
-}
-function setPill(id, text, cls) {
-  const el=$(id); if(!el) return;
-  el.textContent=text; el.className='pill '+cls;
-}
-function fmtDuration(sec) {
-  if (!sec) return '—';
-  const m=Math.floor(sec/60), s=sec%60;
-  return m>0?`${m}m ${s}s`:`${s}s`;
-}
-function fmtMl(ml){ return '~'+Math.round(ml); }
+// ══════════════════════════════════════════════════════════════════
+//  UI UPDATE
+// ══════════════════════════════════════════════════════════════════
+const mc  = pct => pct < 0 ? '#94a3b8' : pct < 20 ? '#ef4444' : pct < 40 ? '#f97316' : pct < 60 ? '#eab308' : '#22c55e';
+const setPill = (id, text, cls) => { const el = $(id); if (el) { el.textContent = text; el.className = 'pill ' + cls; } };
+const fmtDuration = sec => { if (!sec) return '—'; const m = Math.floor(sec/60), s = sec%60; return m>0?`${m}m ${s}s`:`${s}s`; };
+const fmtMl = ml => '~' + Math.round(ml);
 
-// ===================== MODALS =====================
-function openManModal() {
-  const isOn = dash && dash.manualMode;
-  $('manModalTitle').textContent = isOn ? 'Disable Manual Override' : 'Enable Manual Override';
-  $('manModalDesc').textContent  = isOn
-    ? 'Automation will resume and plants will be watered on schedule.'
-    : 'Automation pauses. You can still pause/resume individual plants.';
-  const act=$('manModalActions'); act.innerHTML='';
-  const cancel=document.createElement('button');
-  cancel.className='btn btn-g'; cancel.textContent='Cancel'; cancel.onclick=closeManModal;
-  if (isOn) {
-    const b=document.createElement('button');
-    b.className='btn btn-p'; b.textContent='✅ Disable Override'; b.onclick=()=>setManual(0,0);
-    act.appendChild(cancel); act.appendChild(b);
-  } else {
-    const b=document.createElement('button');
-    b.className='btn btn-b'; b.textContent='⚡ Enable Override'; b.onclick=()=>setManual(1,0);
-    act.appendChild(cancel); act.appendChild(b);
-  }
-  $('manOvl').classList.add('show');
-}
-function closeManModal(){ $('manOvl').classList.remove('show'); }
-async function setManual(state,offAll){
-  await espFetch(`/manualMode?state=${state}&offAll=${offAll}`);
-  closeManModal(); fetchData();
-}
+function updateUI(d, espIP) {
+  // ── System card ────────────────────────────────────────────────
+  const ipEl = $('sysESPIP');
+  if (ipEl) ipEl.textContent = espIP || '—';
+  $('sysUptime').textContent  = d.uptime || '—';
+  $('sysPlants').textContent  = `${d.activePlants} / ${d.totalPlants}`;
 
-function openCreateModal(){
-  if(!dash) return;
-  $('fTitle').textContent='Add New Plant'; $('eIdx').value='-1';
-  $('pName').value=''; $('wAmt').value=''; $('fHrs').value='24'; $('mStart').value='';
-  fillSensors(null,-1); fillRelays(null,-1);
-  $('formOvl').classList.add('show');
-}
-function openEditModal(idx){
-  const p=dash.plants.find(x=>x.index===idx); if(!p) return;
-  $('fTitle').textContent='Edit Plant'; $('eIdx').value=idx;
-  $('pName').value=p.name; $('wAmt').value=p.amount;
-  $('fHrs').value=p.freq; $('mStart').value=p.startPct;
-  fillSensors(p.sensorId,idx); fillRelays(p.relayId,idx);
-  $('formOvl').classList.add('show');
-}
-function closeFModal(){ $('formOvl').classList.remove('show'); }
-
-function fillSensors(currentId,editIdx){
-  const el=$('sSel'); el.innerHTML=''; let avail=0;
-  dash.sensors.forEach(s=>{
-    const opt=document.createElement('option'); opt.value=s.id;
-    const taken=s.assigned&&s.id!=currentId;
-    if(taken){opt.textContent=s.name+' — in use by '+(s.owner||'another'); opt.disabled=true; opt.style.color='#bbb';}
-    else{opt.textContent=s.name+(s.id==currentId&&s.assigned?' (current)':''); avail++;}
-    el.appendChild(opt);
+  // ── Hardware card ──────────────────────────────────────────────
+  if (d.sensorHealth) d.sensorHealth.forEach((h,i)=>{
+    if (h==='connected')  setPill('soilStatus'+i,'Connected','pg');
+    else if (h==='checking') setPill('soilStatus'+i,'Checking…','pg-dim');
+    else                  setPill('soilStatus'+i,'Disconnected','pr');
   });
-  if(currentId!==null&&currentId!==undefined) el.value=currentId;
-  $('warnSensor').style.display=avail===0?'block':'none';
-}
-function fillRelays(currentId,editIdx){
-  const el=$('rSel'); el.innerHTML=''; let avail=0;
-  dash.relays.forEach(r=>{
-    const opt=document.createElement('option'); opt.value=r.id;
-    const taken=r.assigned&&r.id!=currentId;
-    if(taken){opt.textContent=r.name+' — in use by '+(r.owner||'another'); opt.disabled=true; opt.style.color='#bbb';}
-    else{opt.textContent=r.name+(r.id==currentId&&r.assigned?' (current)':''); avail++;}
-    el.appendChild(opt);
+  if (d.flowHealth) d.flowHealth.forEach((h,i)=>{
+    if (h==='connected')  setPill('flowStatus'+i,'Connected','pg');
+    else if (h==='disconnected') setPill('flowStatus'+i,'Disconnected','pr');
+    else                  setPill('flowStatus'+i,'Idle','pg-dim');
   });
-  if(currentId!==null&&currentId!==undefined) el.value=currentId;
-  $('warnRelay').style.display=avail===0?'block':'none';
-}
+  if (d.relayHealth) d.relayHealth.forEach((h,i)=>{
+    if (h==='working')    setPill('relayStatus'+i,'Working','pg');
+    else if (h==='fault') setPill('relayStatus'+i,'Fault','pr');
+    else                  setPill('relayStatus'+i,'Unknown','pg-dim');
+  });
+  setPill('sdStatus', d.sdAvailable?'Available':'Not Available', d.sdAvailable?'pg':'pr');
 
-async function savePlant(){
-  const idx=$('eIdx').value, name=$('pName').value.trim();
-  const sEl=$('sSel'), rEl=$('rSel');
-  const sensor=sEl.value, relay=rEl.value;
-  const amt=$('wAmt').value, freq=$('fHrs').value, ms=$('mStart').value;
-  if(sEl.options[sEl.selectedIndex]?.disabled){alert('Selected sensor is already in use.'); return;}
-  if(rEl.options[rEl.selectedIndex]?.disabled){alert('Selected relay is already in use.'); return;}
-  if(!name||sensor===''||relay===''||!amt||!ms){alert('Please fill in all fields.'); return;}
-  if(Number(ms)<0||Number(ms)>99){alert('Start moisture must be 0–99%.'); return;}
-  if(Number(amt)<1){alert('Target volume must be at least 1 mL.'); return;}
-  const route=Number(idx)>=0?'/editPlant':'/addPlant';
-  let url=`${route}?name=${encodeURIComponent(name)}&sensor=${sensor}&relay=${relay}&amount=${amt}&freq=${freq}&mstart=${ms}`;
-  if(Number(idx)>=0) url+=`&index=${idx}`;
-  const res=await espFetch(url);
-  if(res.ok){closeFModal(); fetchData();} else alert(await res.text());
-}
-
-function openDelModal(idx){ delIdx=idx; $('delOvl').classList.add('show'); }
-function closeDelModal(){   delIdx=-1;  $('delOvl').classList.remove('show'); }
-async function confirmDelete(){
-  if(delIdx<0) return;
-  await espFetch('/deletePlant?index='+delIdx); closeDelModal(); fetchData();
-}
-
-async function togglePause(idx,pause){
-  await espFetch(`/pausePlant?index=${idx}&paused=${pause?1:0}`); fetchData();
-}
-
-function openInfoModal(idx){
-  const p=dash.plants.find(x=>x.index===idx); if(!p) return;
-  infoIdx=idx;
-  $('infoPlantName').textContent=p.name;
-  $('infoPlantSub').textContent=p.sensorName+' · '+p.relayName;
-  $('iSoil').innerHTML=(p.soilPct>=0?p.soilPct:'—')+'<span class="unit">%</span>';
-  $('iLastMl').innerHTML=fmtMl(p.lastSessionMl)+'<span class="unit">mL</span>';
-  $('iLastTime').textContent=p.lastWatered;
-  $('iWeekMl').innerHTML=fmtMl(p.weekMl)+'<span class="unit">mL</span>';
-  $('iTotalMl').innerHTML=fmtMl(p.totalMl)+'<span class="unit">mL</span>';
-  $('iTarget').innerHTML=p.amount+'<span class="unit">mL</span>';
-  $('iThresh').innerHTML=p.startPct+'<span class="unit">%</span>';
-  $('iFreq').innerHTML=p.freq+'<span class="unit">h</span>';
-  $('iSessCount').textContent=p.sessions?p.sessions.length:0;
-
-  const tbody=$('sessBody'); tbody.innerHTML='';
-  if(!p.sessions||p.sessions.length===0){
-    tbody.innerHTML='<tr><td colspan="5" class="sess-empty">No sessions yet.</td></tr>';
-  } else {
-    [...p.sessions].reverse().forEach((s,i)=>{
-      const tr=document.createElement('tr');
-      tr.innerHTML=`
-        <td style="color:#94a3b8;font-size:10.5px">${p.sessions.length-i}</td>
-        <td style="font-family:monospace;font-size:11px">${s.startLabel}</td>
-        <td>${fmtDuration(s.durationSec)}</td>
-        <td><strong>${fmtMl(s.deliveredMl)}</strong> mL</td>
-        <td><span class="sess-badge ${s.manual?'manual':'auto'}">${s.manual?'Manual':'Auto'}</span></td>`;
-      tbody.appendChild(tr);
-    });
-  }
-  $('infoOvl').classList.add('show');
-}
-function closeInfoModal(){ $('infoOvl').classList.remove('show'); infoIdx=-1; }
-
-// ===================== FETCH WRAPPER =====================
-async function espFetch(path, opts) {
-  if (!ESP_BASE) { setIpStatus('No IP set', 'err'); throw new Error('No ESP32 IP configured'); }
-  return fetch(ESP_BASE + path, opts);
-}
-
-// ===================== MAIN DATA FETCH =====================
-async function fetchData(){
-  if (!ESP_BASE) {
-    $('liveBadge').textContent = 'No IP set';
-    return;
-  }
-  try {
-    const res = await espFetch('/data');
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    dash = await res.json();
-
-    // Connection success
-    if (!isConnected) {
-      isConnected = true;
-      setConnectBtn(true);
-    }
-    setIpStatus('Connected ✓', 'ok');
-    setEsp32Pill('connected');
-
-  } catch(e) {
-    isConnected = false;
-    $('liveBadge').textContent = 'Reconnecting…';
-    setIpStatus('Unreachable', 'err');
-    setEsp32Pill('error');
-    setConnectBtn(false);
-    return;
-  }
-
-  $('liveBadge').textContent = 'Live';
-
-  if(dash.flowAccuracyPct !== undefined){
-    flowAccuracyPct = dash.flowAccuracyPct;
-    ['accPct','lvAccPct','infoAccPct','fhAccPct'].forEach(id=>{
-      const el=$(id); if(el) el.textContent=flowAccuracyPct;
-    });
-  }
-
-  $('sysUptime').textContent = dash.uptime || '—';
-  $('sysPlants').textContent = dash.activePlants + ' / ' + dash.totalPlants;
-
-  const isOn = dash.manualMode;
+  // ── Manual toggle ──────────────────────────────────────────────
+  const isOn = d.manualMode;
   $('manTog').classList.toggle('on', isOn);
   $('togLabelAuto').classList.toggle('active', !isOn);
   $('togLabelMan').classList.toggle('active', isOn);
   $('manHint').textContent = isOn ? 'Override active — tap to disable' : 'Tap to enable manual relay override';
   $('manHint').classList.toggle('active', isOn);
 
-  if(dash.sensorHealth){
-    dash.sensorHealth.forEach((h,i)=>{
-      if(h==='connected')     setPill('soilStatus'+i,'Connected','pg');
-      else if(h==='checking') setPill('soilStatus'+i,'Checking…','pg-dim');
-      else                    setPill('soilStatus'+i,'Disconnected','pr');
-    });
-  }
-  if(dash.flowHealth){
-    dash.flowHealth.forEach((h,i)=>{
-      if(h==='connected')         setPill('flowStatus'+i,'Connected','pg');
-      else if(h==='disconnected') setPill('flowStatus'+i,'Disconnected','pr');
-      else                        setPill('flowStatus'+i,'Idle','pg-dim');
-    });
-  }
-  if(dash.relayHealth){
-    dash.relayHealth.forEach((h,i)=>{
-      if(h==='working')    setPill('relayStatus'+i,'Working','pg');
-      else if(h==='fault') setPill('relayStatus'+i,'Fault','pr');
-      else                 setPill('relayStatus'+i,'Unknown','pg-dim');
-    });
-  }
-  setPill('sdStatus', dash.sdAvailable?'Available':'Not Available', dash.sdAvailable?'pg':'pr');
-
-  if(dash.plants.length > 0){
-    const p = dash.plants[0];
-    const lv = (id,val,cls) => { const el=$(id); el.textContent=val; el.className='live-val '+(cls||''); };
-    lv('lvSoil', p.soilPct>=0?p.soilPct+'%':'—',         p.soilPct>p.startPct?'ok':'warn');
-    lv('lvFlow', '~'+p.flowRate.toFixed(3)+' L/min',      p.relayOn?'ind':'dim');
-    lv('lvVol',  fmtMl(p.deliveredMl+(p.pausedMl||0))+' mL', p.relayOn?'ind':'dim');
-    lv('lvPump', p.relayOn?'ON 💧':'OFF',                 p.relayOn?'ok':'dim');
-    lv('lvMode', dash.manualMode?'Manual':'Auto',          dash.manualMode?'warn':'ok');
-    lv('lvRaw',  dash.rawADC!==undefined?dash.rawADC[0]:'—','dim');
+  // ── Live readings ──────────────────────────────────────────────
+  if (d.plants.length > 0) {
+    const p = d.plants[0];
+    const lv = (id, val, cls) => { const el=$(id); el.textContent=val; el.className='live-val '+(cls||''); };
+    lv('lvSoil', p.soilPct>=0 ? p.soilPct+'%' : '—', p.soilPct > p.startPct ? 'ok' : 'warn');
+    lv('lvFlow', '~'+(Number(p.flowRate)||0).toFixed(3)+' L/min', p.relayOn ? 'ind' : 'dim');
+    const totalDel = (p.deliveredMl||0) + (p.pausedMl||0);
+    lv('lvVol',  fmtMl(totalDel)+' mL', p.relayOn ? 'ind' : 'dim');
+    lv('lvPump', p.relayOn ? 'ON 💧' : 'OFF', p.relayOn ? 'ok' : 'dim');
+    lv('lvMode', d.manualMode ? 'Manual' : 'Auto', d.manualMode ? 'warn' : 'ok');
+    lv('lvRaw',  d.rawADC && d.rawADC[0] !== undefined ? d.rawADC[0] : '—', 'dim');
   } else {
     ['lvSoil','lvFlow','lvVol','lvPump','lvMode','lvRaw'].forEach(id=>{
       const el=$(id); el.textContent='—'; el.className='live-val dim';
     });
-    $('lvMode').textContent = dash.manualMode ? 'Manual' : 'Auto';
+    $('lvMode').textContent = d.manualMode ? 'Manual' : 'Auto';
   }
 
-  $('emptyBox').style.display = dash.plants.length ? 'none' : 'block';
-
-  const cards = $('plantCards'); cards.innerHTML = '';
-  dash.plants.forEach(p=>{
+  // ── Empty / plant cards ────────────────────────────────────────
+  const flowAccPct = d.flowAccuracyPct || 15;
+  $('emptyBox').style.display = d.plants.length ? 'none' : 'block';
+  const cards = $('plantCards');
+  cards.innerHTML = '';
+  d.plants.forEach(p => {
     const col = mc(p.soilPct);
-    const isW = p.relayOn, isP = p.paused, isM = dash.manualMode;
-    const totalDelivered = p.deliveredMl + (p.pausedMl||0);
-    const progPct = p.amount>0 ? Math.min(100,Math.round((totalDelivered/p.amount)*100)) : 0;
+    const isW = p.relayOn, isP = p.paused;
+    const totalDelivered = (p.deliveredMl||0) + (p.pausedMl||0);
+    const progPct = p.amount > 0 ? Math.min(100, Math.round((totalDelivered / p.amount)*100)) : 0;
     const statusClass = {'Working':'pb','Monitoring':'pg-dim','Wet enough':'pg','Paused':'pa','Manual mode':'pm','Needs attention':'pr'}[p.status]||'pg-dim';
-
     cards.innerHTML += `
     <div class="card glass"><div class="c-in">
       <div class="c-head">
-        <div style="min-width:0">
-          <div class="c-name">${p.name}</div>
-          <div class="c-sub">${p.sensorName} &nbsp;·&nbsp; ${p.relayName}</div>
-        </div>
+        <div style="min-width:0"><div class="c-name">${p.name}</div><div class="c-sub">${p.sensorName||'Sensor'} &nbsp;·&nbsp; ${p.relayName||'Relay'}</div></div>
         <div class="c-badges">
           <span class="pill ${statusClass}">${p.status}</span>
           ${isW?'<span class="pill pb">💧 Watering</span>':''}
@@ -786,27 +657,27 @@ async function fetchData(){
         <div>
           <div class="m-lbl">Soil Moisture</div>
           <div class="m-val" style="color:${col}">${p.soilPct>=0?p.soilPct:'—'}<span class="unit">%</span></div>
-          <div class="mbar"><div class="mfill" style="width:${Math.max(0,p.soilPct)}%;background:${col}"></div></div>
+          <div class="mbar"><div class="mfill" style="width:${Math.max(0,p.soilPct||0)}%;background:${col}"></div></div>
           <div class="m-sub">starts ≤ ${p.startPct}%</div>
         </div>
         <div>
           <div class="m-lbl">Flow Rate</div>
-          <div class="m-val">~${p.flowRate.toFixed(3)}<span class="unit">L/m</span></div>
-          <div class="m-sub">±${flowAccuracyPct}% approx</div>
+          <div class="m-val">~${(Number(p.flowRate)||0).toFixed(3)}<span class="unit">L/m</span></div>
+          <div class="m-sub">±${flowAccPct}% approx</div>
         </div>
         <div>
           <div class="m-lbl">${isW?'Delivered':'Last Session'}</div>
-          <div class="m-val" style="font-size:16px">${isW?fmtMl(totalDelivered):fmtMl(p.lastSessionMl)}<span class="unit">mL</span></div>
+          <div class="m-val" style="font-size:16px">${isW?fmtMl(totalDelivered):fmtMl(p.lastSessionMl||0)}<span class="unit">mL</span></div>
           <div class="m-sub">${isW?'target '+p.amount+' mL':'~ approx'}</div>
         </div>
         <div>
           <div class="m-lbl">Pump</div>
           <div class="m-val" style="color:${isW?'#22c55e':'#cbd5e1'};font-size:16px">${isW?'ON':'OFF'}</div>
-          <div class="m-sub">${p.relayName}</div>
+          <div class="m-sub">${p.relayName||'Relay'}</div>
         </div>
         <div>
           <div class="m-lbl">Last Watered</div>
-          <div class="m-val" style="font-size:12px;padding-top:3px">${p.lastWatered}</div>
+          <div class="m-val" style="font-size:12px;padding-top:3px">${p.lastWatered||'Never'}</div>
           <div class="m-sub">every ${p.freq}h</div>
         </div>
       </div>
@@ -814,7 +685,9 @@ async function fetchData(){
       <div class="c-actions">
         <button class="btn btn-b sm" onclick="openInfoModal(${p.index})">📊 Details</button>
         <div class="c-actions-right">
-          ${isM ? `<button class="btn ${isP?'btn-p':'btn-a'} sm" onclick="togglePause(${p.index},${isP?0:1})">${isP?'▶ Resume':'⏸ Pause'}</button>` : ''}
+          ${d.manualMode ? `<button class="btn ${isP?'btn-p':'btn-a'} sm" onclick="togglePause(${p.index},${isP?0:1})">${isP?'▶ Resume':'⏸ Pause'}</button>` : ''}
+          ${d.manualMode && !isP && !isW ? `<button class="btn btn-b sm" onclick="sendWaterNow(${p.index})">💧 Water Now</button>` : ''}
+          ${d.manualMode && isW ? `<button class="btn btn-d sm" onclick="sendStopNow(${p.index})">⏹ Stop</button>` : ''}
           <button class="btn btn-g sm" onclick="openEditModal(${p.index})">✏ Edit</button>
           <button class="btn btn-d sm icon-only" onclick="openDelModal(${p.index})" title="Delete">🗑</button>
         </div>
@@ -822,14 +695,13 @@ async function fetchData(){
     </div></div>`;
   });
 
+  // ── Alerts ────────────────────────────────────────────────────
   const al = $('alertList');
-  if(dash.alerts.length){
-    al.innerHTML = dash.alerts.map(a => {
+  if (d.alerts && d.alerts.length) {
+    al.innerHTML = d.alerts.map(a => {
       const parts = a.split('|');
       if (parts.length >= 3) {
-        const ago  = parts[0].trim();
-        const time = parts[1].trim();
-        const msg  = parts.slice(2).join('|').trim();
+        const ago = parts[0].trim(), time = parts[1].trim(), msg = parts.slice(2).join('|').trim();
         return `<div class="arow"><span class="a-t">${ago} · ${time}</span><span class="a-m">${msg}</span></div>`;
       }
       return `<div class="arow"><span class="a-t">—</span><span class="a-m">${a}</span></div>`;
@@ -838,16 +710,169 @@ async function fetchData(){
     al.innerHTML = '<div class="arow"><span class="a-t">—</span><span class="a-m">No alerts yet</span></div>';
   }
 
-  if(infoIdx >= 0) openInfoModal(infoIdx);
+  // ── Refresh info modal if open ─────────────────────────────────
+  if (infoIdx >= 0) openInfoModal(infoIdx);
 }
 
-// ===================== INIT =====================
-loadSavedIp();
-// Don't auto-fetch — wait for user to press Connect
-// If IP was saved, show a hint
-if ($('espIpInput').value) {
-  setIpStatus('⏳ Press Connect', 'wait');
+// ══════════════════════════════════════════════════════════════════
+//  MANUAL MODAL
+// ══════════════════════════════════════════════════════════════════
+function openManModal() {
+  const isOn = dash && dash.manualMode;
+  $('manModalTitle').textContent = isOn ? 'Disable Manual Override' : 'Enable Manual Override';
+  $('manModalDesc').textContent  = isOn
+    ? 'Automation will resume and plants will be watered on schedule.'
+    : 'Automation pauses. You can still pause/resume individual plants.';
+  const act = $('manModalActions'); act.innerHTML = '';
+  const cancel = document.createElement('button');
+  cancel.className = 'btn btn-g'; cancel.textContent = 'Cancel'; cancel.onclick = closeManModal;
+  if (isOn) {
+    const b = document.createElement('button'); b.className = 'btn btn-p';
+    b.textContent = '✅ Disable Override'; b.onclick = () => setManual(0, 0);
+    act.appendChild(cancel); act.appendChild(b);
+  } else {
+    const b = document.createElement('button'); b.className = 'btn btn-b';
+    b.textContent = '⚡ Enable Override'; b.onclick = () => setManual(1, 0);
+    act.appendChild(cancel); act.appendChild(b);
+  }
+  $('manOvl').classList.add('show');
 }
+function closeManModal() { $('manOvl').classList.remove('show'); }
+async function setManual(state, offAll) {
+  await sendCommand({ cmd: 'manualMode', state, offAll });
+  closeManModal();
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  CREATE / EDIT MODAL
+// ══════════════════════════════════════════════════════════════════
+function openCreateModal() {
+  if (!dash) return;
+  $('fTitle').textContent = 'Add New Plant'; $('eIdx').value = '-1';
+  $('pName').value = ''; $('wAmt').value = ''; $('fHrs').value = '24'; $('mStart').value = '';
+  fillSensors(null, -1); fillRelays(null, -1);
+  $('formOvl').classList.add('show');
+}
+function openEditModal(idx) {
+  const p = dash && dash.plants.find(x => x.index === idx); if (!p) return;
+  $('fTitle').textContent = 'Edit Plant'; $('eIdx').value = idx;
+  $('pName').value = p.name; $('wAmt').value = p.amount; $('fHrs').value = p.freq; $('mStart').value = p.startPct;
+  fillSensors(p.sensorId, idx); fillRelays(p.relayId, idx);
+  $('formOvl').classList.add('show');
+}
+function closeFModal() { $('formOvl').classList.remove('show'); }
+
+function fillSensors(currentId, editIdx) {
+  const el = $('sSel'); el.innerHTML = ''; let avail = 0;
+  (dash.sensors||[]).forEach(s => {
+    const opt = document.createElement('option'); opt.value = s.id;
+    const taken = s.assigned && s.id != currentId;
+    if (taken) { opt.textContent = s.name + ' — in use by ' + (s.owner||'another'); opt.disabled = true; opt.style.color = '#bbb'; }
+    else        { opt.textContent = s.name + (s.id == currentId && s.assigned ? ' (current)' : ''); avail++; }
+    el.appendChild(opt);
+  });
+  if (currentId !== null && currentId !== undefined) el.value = currentId;
+  $('warnSensor').style.display = avail === 0 ? 'block' : 'none';
+}
+function fillRelays(currentId, editIdx) {
+  const el = $('rSel'); el.innerHTML = ''; let avail = 0;
+  (dash.relays||[]).forEach(r => {
+    const opt = document.createElement('option'); opt.value = r.id;
+    const taken = r.assigned && r.id != currentId;
+    if (taken) { opt.textContent = r.name + ' — in use by ' + (r.owner||'another'); opt.disabled = true; opt.style.color = '#bbb'; }
+    else        { opt.textContent = r.name + (r.id == currentId && r.assigned ? ' (current)' : ''); avail++; }
+    el.appendChild(opt);
+  });
+  if (currentId !== null && currentId !== undefined) el.value = currentId;
+  $('warnRelay').style.display = avail === 0 ? 'block' : 'none';
+}
+
+async function savePlant() {
+  const idx  = $('eIdx').value;
+  const name = $('pName').value.trim();
+  const sEl  = $('sSel'), rEl = $('rSel');
+  const sensor = Number(sEl.value), relay = Number(rEl.value);
+  const amt  = Number($('wAmt').value), freq = Number($('fHrs').value), ms = Number($('mStart').value);
+  if (sEl.options[sEl.selectedIndex]?.disabled) { alert('Selected sensor is already in use.'); return; }
+  if (rEl.options[rEl.selectedIndex]?.disabled) { alert('Selected relay is already in use.');  return; }
+  if (!name || !amt || !ms && ms !== 0) { alert('Please fill in all fields.'); return; }
+  if (ms < 0 || ms > 99)  { alert('Start moisture must be 0–99%.'); return; }
+  if (amt < 1)             { alert('Target volume must be at least 1 mL.'); return; }
+
+  const cmd = Number(idx) >= 0
+    ? { cmd: 'editPlant',  index: Number(idx), name, sensor, relay, amount: amt, freq, mstart: ms }
+    : { cmd: 'addPlant',                        name, sensor, relay, amount: amt, freq, mstart: ms };
+
+  closeFModal();
+  await sendCommand(cmd);
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  DELETE
+// ══════════════════════════════════════════════════════════════════
+function openDelModal(idx)  { delIdx = idx; $('delOvl').classList.add('show'); }
+function closeDelModal()    { delIdx = -1;  $('delOvl').classList.remove('show'); }
+async function confirmDelete() {
+  if (delIdx < 0) return;
+  const idx = delIdx;
+  closeDelModal();
+  await sendCommand({ cmd: 'deletePlant', index: idx });
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  PAUSE / WATER NOW / STOP
+// ══════════════════════════════════════════════════════════════════
+async function togglePause(idx, pause) {
+  await sendCommand({ cmd: 'pausePlant', index: idx, paused: pause });
+}
+async function sendWaterNow(idx) {
+  await sendCommand({ cmd: 'waterNow', index: idx });
+}
+async function sendStopNow(idx) {
+  await sendCommand({ cmd: 'stopNow', index: idx });
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  INFO MODAL
+// ══════════════════════════════════════════════════════════════════
+function openInfoModal(idx) {
+  const p = dash && dash.plants.find(x => x.index === idx); if (!p) return;
+  infoIdx = idx;
+  $('infoPlantName').textContent = p.name;
+  $('infoPlantSub').textContent  = (p.sensorName||'Sensor') + ' · ' + (p.relayName||'Relay');
+  $('iSoil').innerHTML    = (p.soilPct>=0?p.soilPct:'—') + '<span class="unit">%</span>';
+  $('iLastMl').innerHTML  = fmtMl(p.lastSessionMl||0) + '<span class="unit">mL</span>';
+  $('iLastTime').textContent = p.lastWatered || 'never';
+  $('iWeekMl').innerHTML  = fmtMl(p.weekMl||0) + '<span class="unit">mL</span>';
+  $('iTotalMl').innerHTML = fmtMl(p.totalMl||0) + '<span class="unit">mL</span>';
+  $('iTarget').innerHTML  = p.amount + '<span class="unit">mL</span>';
+  $('iThresh').innerHTML  = p.startPct + '<span class="unit">%</span>';
+  $('iFreq').innerHTML    = p.freq + '<span class="unit">h</span>';
+  $('iSessCount').textContent = p.sessions ? p.sessions.length : 0;
+
+  const tbody = $('sessBody'); tbody.innerHTML = '';
+  const sessions = p.sessions || [];
+  if (!sessions.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="sess-empty">No sessions yet.</td></tr>';
+  } else {
+    [...sessions].reverse().forEach((s, i) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td style="color:#94a3b8;font-size:10.5px">${sessions.length-i}</td>
+        <td style="font-family:monospace;font-size:11px">${s.startLabel||'—'}</td>
+        <td>${fmtDuration(s.durationSec)}</td>
+        <td><strong>${fmtMl(s.deliveredMl||0)}</strong> mL</td>
+        <td><span class="sess-badge ${s.manual?'manual':'auto'}">${s.manual?'Manual':'Auto'}</span></td>`;
+      tbody.appendChild(tr);
+    });
+  }
+  $('infoOvl').classList.add('show');
+}
+function closeInfoModal() { $('infoOvl').classList.remove('show'); infoIdx = -1; }
+
+// Close modals on overlay click
+['formOvl','delOvl','manOvl','infoOvl'].forEach(id => {
+  $(id).addEventListener('click', e => { if (e.target === $(id)) $(id).classList.remove('show'); });
+});
 </script>
 </body>
 </html>
