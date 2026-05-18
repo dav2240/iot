@@ -766,24 +766,35 @@ function fillSensors(currentId, editIdx) {
   const el = $('sSel'); el.innerHTML = ''; let avail = 0;
   (dash.sensors||[]).forEach(s => {
     const opt = document.createElement('option'); opt.value = s.id;
-    const taken = s.assigned && s.id != currentId;
-    if (taken) { opt.textContent = s.name + ' — in use by ' + (s.owner||'another'); opt.disabled = true; opt.style.color = '#bbb'; }
-    else        { opt.textContent = s.name + (s.id == currentId && s.assigned ? ' (current)' : ''); avail++; }
+    const takenByOther = s.assigned && Number(s.id) !== Number(currentId);
+    if (takenByOther) {
+      opt.textContent = s.name + ' — in use by ' + (s.owner || 'another');
+      opt.disabled = true; opt.style.color = '#bbb';
+    } else {
+      opt.textContent = s.name + (Number(s.id) === Number(currentId) && s.assigned ? ' (current)' : '');
+      avail++;
+    }
     el.appendChild(opt);
   });
-  if (currentId !== null && currentId !== undefined) el.value = currentId;
+  if (currentId !== null && currentId !== undefined) el.value = String(currentId);
   $('warnSensor').style.display = avail === 0 ? 'block' : 'none';
 }
+
 function fillRelays(currentId, editIdx) {
   const el = $('rSel'); el.innerHTML = ''; let avail = 0;
   (dash.relays||[]).forEach(r => {
     const opt = document.createElement('option'); opt.value = r.id;
-    const taken = r.assigned && r.id != currentId;
-    if (taken) { opt.textContent = r.name + ' — in use by ' + (r.owner||'another'); opt.disabled = true; opt.style.color = '#bbb'; }
-    else        { opt.textContent = r.name + (r.id == currentId && r.assigned ? ' (current)' : ''); avail++; }
+    const takenByOther = r.assigned && Number(r.id) !== Number(currentId);
+    if (takenByOther) {
+      opt.textContent = r.name + ' — in use by ' + (r.owner || 'another');
+      opt.disabled = true; opt.style.color = '#bbb';
+    } else {
+      opt.textContent = r.name + (Number(r.id) === Number(currentId) && r.assigned ? ' (current)' : '');
+      avail++;
+    }
     el.appendChild(opt);
   });
-  if (currentId !== null && currentId !== undefined) el.value = currentId;
+  if (currentId !== null && currentId !== undefined) el.value = String(currentId);
   $('warnRelay').style.display = avail === 0 ? 'block' : 'none';
 }
 
