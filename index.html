@@ -766,7 +766,20 @@ function fillSensors(currentId, editIdx) {
   const el = $('sSel'); el.innerHTML = ''; let avail = 0;
   (dash.sensors||[]).forEach(s => {
     const opt = document.createElement('option'); opt.value = s.id;
-    const takenByOther = s.assigned && Number(s.id) !== Number(currentId);
+    const isOwn = Number(s.id) === Number(currentId);
+    const taken = s.assigned && !isOwn && dash.plants.length > 0;
+    if (taken) {
+      opt.textContent = s.name + ' — in use by ' + (s.owner||'another');
+      opt.disabled = true; opt.style.color = '#bbb';
+    } else {
+      opt.textContent = s.name + (isOwn && s.assigned ? ' (current)' : '');
+      avail++;
+    }
+    el.appendChild(opt);
+  });
+  if (currentId !== null && currentId !== undefined) el.value = String(currentId);
+  $('warnSensor').style.display = avail === 0 ? 'block' : 'none';
+}
     if (takenByOther) {
       opt.textContent = s.name + ' — in use by ' + (s.owner || 'another');
       opt.disabled = true; opt.style.color = '#bbb';
@@ -784,12 +797,13 @@ function fillRelays(currentId, editIdx) {
   const el = $('rSel'); el.innerHTML = ''; let avail = 0;
   (dash.relays||[]).forEach(r => {
     const opt = document.createElement('option'); opt.value = r.id;
-    const takenByOther = r.assigned && Number(r.id) !== Number(currentId);
-    if (takenByOther) {
-      opt.textContent = r.name + ' — in use by ' + (r.owner || 'another');
+    const isOwn = Number(r.id) === Number(currentId);
+    const taken = r.assigned && !isOwn && dash.plants.length > 0;
+    if (taken) {
+      opt.textContent = r.name + ' — in use by ' + (r.owner||'another');
       opt.disabled = true; opt.style.color = '#bbb';
     } else {
-      opt.textContent = r.name + (Number(r.id) === Number(currentId) && r.assigned ? ' (current)' : '');
+      opt.textContent = r.name + (isOwn && r.assigned ? ' (current)' : '');
       avail++;
     }
     el.appendChild(opt);
@@ -797,7 +811,6 @@ function fillRelays(currentId, editIdx) {
   if (currentId !== null && currentId !== undefined) el.value = String(currentId);
   $('warnRelay').style.display = avail === 0 ? 'block' : 'none';
 }
-
 async function savePlant() {
   const idx  = $('eIdx').value;
   const name = $('pName').value.trim();
