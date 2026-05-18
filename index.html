@@ -17,6 +17,50 @@ body{font-family:'Outfit',sans-serif;min-height:100vh;background:#eef1f7;color:#
 @keyframes b2m{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-35px,20px) scale(1.05)}}
 @keyframes b3m{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(20px,-35px) scale(1.09)}}
 .glass{background:rgba(255,255,255,.26);backdrop-filter:blur(30px) saturate(160%);-webkit-backdrop-filter:blur(30px) saturate(160%);border:1px solid rgba(255,255,255,.6);box-shadow:0 8px 32px rgba(0,0,0,.06),inset 0 1.5px 0 rgba(255,255,255,.75),inset 0 -1px 0 rgba(0,0,0,.03)}
+
+/* ===== LOADING SCREEN ===== */
+#loadScreen{
+  position:fixed;inset:0;z-index:9999;
+  display:flex;align-items:center;justify-content:center;
+  background:#eef1f7;
+  flex-direction:column;gap:0;
+  transition:opacity .5s ease;
+}
+#loadScreen.hiding{opacity:0;pointer-events:none}
+.load-card{
+  background:rgba(255,255,255,.55);
+  backdrop-filter:blur(40px) saturate(180%);
+  -webkit-backdrop-filter:blur(40px) saturate(180%);
+  border:1px solid rgba(255,255,255,.75);
+  box-shadow:0 16px 48px rgba(0,0,0,.08);
+  border-radius:32px;
+  padding:44px 52px 40px;
+  display:flex;flex-direction:column;align-items:center;gap:20px;
+  max-width:360px;width:90%;
+}
+.load-icon{font-size:54px;animation:iconBob 2.2s ease-in-out infinite}
+@keyframes iconBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+.load-title{font-size:22px;font-weight:800;color:#0f172a;letter-spacing:-.3px}
+.load-sub{font-size:13.5px;color:#64748b;text-align:center;line-height:1.6;font-weight:500}
+.load-status{font-size:12px;color:#94a3b8;font-weight:600;display:flex;align-items:center;gap:7px}
+.load-dot{width:8px;height:8px;border-radius:50%;background:#6366f1;animation:ldot 1.4s ease-in-out infinite}
+@keyframes ldot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.25;transform:scale(.6)}}
+.load-dots{display:flex;gap:5px;align-items:center}
+.load-dots span{width:7px;height:7px;border-radius:50%;background:#6366f1;animation:bounce 1.4s ease-in-out infinite}
+.load-dots span:nth-child(2){animation-delay:.18s}
+.load-dots span:nth-child(3){animation-delay:.36s}
+@keyframes bounce{0%,100%{transform:translateY(0);opacity:1}50%{transform:translateY(-6px);opacity:.4}}
+.load-hint{font-size:11px;color:#b0bec5;font-weight:500;text-align:center;line-height:1.5;max-width:240px}
+/* retry timer ring */
+.ring-wrap{position:relative;width:38px;height:38px;flex-shrink:0}
+.ring-bg{stroke:#e2e8f0}
+.ring-fg{stroke:#6366f1;stroke-dasharray:100;stroke-dashoffset:100;transition:stroke-dashoffset .4s linear;stroke-linecap:round;transform:rotate(-90deg);transform-origin:50% 50%}
+.ring-lbl{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#6366f1}
+
+/* ===== MAIN DASHBOARD (hidden until ESP online) ===== */
+#mainDash{display:none}
+#mainDash.visible{display:block}
+
 .topbar{background:rgba(255,255,255,.3);backdrop-filter:blur(34px) saturate(180%);-webkit-backdrop-filter:blur(34px) saturate(180%);border-bottom:1px solid rgba(255,255,255,.55);box-shadow:0 2px 18px rgba(0,0,0,.05);padding:13px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
 .topbar-brand{font-size:19px;font-weight:800;letter-spacing:-.3px;color:#1e293b}
 .topbar-right{display:flex;align-items:center;gap:16px}
@@ -108,6 +152,8 @@ body{font-family:'Outfit',sans-serif;min-height:100vh;background:#eef1f7;color:#
 .live-item .live-val.ok{color:#16a34a}
 .live-item .live-val.dim{color:#94a3b8}
 .live-approx{font-size:9px;color:#b0b8c8;font-weight:500;margin-top:1px}
+/* IP chip in system card */
+.ip-chip{font-size:11.5px;font-weight:700;color:#4338ca;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.15);border-radius:8px;padding:2px 8px;font-family:monospace;letter-spacing:.3px}
 .overlay{position:fixed;inset:0;background:rgba(15,23,42,.25);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);display:none;align-items:flex-start;justify-content:center;padding:14px;z-index:999;overflow-y:auto}
 .overlay.show{display:flex}
 .modal{width:min(780px,100%);background:rgba(255,255,255,.93);backdrop-filter:blur(48px) saturate(200%);-webkit-backdrop-filter:blur(48px) saturate(200%);border:1px solid rgba(255,255,255,.82);border-radius:30px;padding:26px 26px 30px;box-shadow:0 20px 56px rgba(0,0,0,.12);animation:mIn .18s ease;margin:auto}
@@ -155,11 +201,30 @@ select option:disabled{color:#bbb}
 <body>
 <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
 
+<!-- ===== LOADING SCREEN ===== -->
+<div id="loadScreen">
+  <div class="load-card glass">
+    <div class="load-icon">🌿</div>
+    <div class="load-title">Plant Dashboard</div>
+    <div class="load-sub">Waiting for ESP32 to come online…<br>This page will appear automatically.</div>
+    <div class="load-dots">
+      <span></span><span></span><span></span>
+    </div>
+    <div class="load-status">
+      <div class="load-dot"></div>
+      <span id="loadStatusTxt">Connecting to Firebase…</span>
+    </div>
+    <div class="load-hint" id="loadHint">Make sure the ESP32 is powered and connected to Wi-Fi.</div>
+  </div>
+</div>
+
+<!-- ===== MAIN DASHBOARD ===== -->
+<div id="mainDash">
 <div class="topbar">
   <div class="topbar-brand">🌿 Dashboard</div>
   <div class="topbar-right">
     <div class="topbar-clock" id="rtClock">--:--:-- --</div>
-    <div class="topbar-live"><div class="live-dot"></div><span id="liveBadge">Connecting…</span></div>
+    <div class="topbar-live"><div class="live-dot"></div><span id="liveBadge">Live</span></div>
   </div>
 </div>
 
@@ -167,7 +232,8 @@ select option:disabled{color:#bbb}
   <div class="sstrip">
     <div class="glass scard">
       <div class="scard-title">System</div>
-      <div class="srow"><span class="srow-lbl">ESP32</span><span class="pill pg-dim" id="esp32Status">Waiting…</span></div>
+      <div class="srow"><span class="srow-lbl">ESP32</span><span class="pill pg" id="esp32Status">Online</span></div>
+      <div class="srow"><span class="srow-lbl">IP Address</span><span class="ip-chip" id="sysIP">—</span></div>
       <div class="srow"><span class="srow-lbl">Uptime</span><span class="srow-val" id="sysUptime">—</span></div>
       <div class="srow"><span class="srow-lbl">Time</span><span class="srow-val" id="sysTime">—</span></div>
       <div class="srow"><span class="srow-lbl">Plants</span><span class="srow-val" id="sysPlants">—</span></div>
@@ -221,6 +287,7 @@ select option:disabled{color:#bbb}
     </div>
   </div>
 </div>
+</div><!-- end #mainDash -->
 
 <!-- CREATE / EDIT MODAL -->
 <div class="overlay" id="formOvl">
@@ -321,14 +388,12 @@ select option:disabled{color:#bbb}
 </div>
 </div>
 
-<!-- Firebase SDK (modular, loaded as ES module) -->
 <script type="module">
 import { initializeApp }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getDatabase, ref, onValue, push, set, remove }
+import { getDatabase, ref, onValue, push, set }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
-// ── Firebase config ──────────────────────────────────────────────────────
 const firebaseConfig = {
   apiKey:      "AIzaSyB8KWlGHwuIF2YvLUh0m6yKu7vjCEAJc3c",
   databaseURL: "https://vadpro-8eb15-default-rtdb.asia-southeast1.firebasedatabase.app"
@@ -336,17 +401,49 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db  = getDatabase(app);
 
-// ── State ────────────────────────────────────────────────────────────────
 let dash = null, delIdx = -1, infoIdx = null;
+let espOnline = false;
 const $ = id => document.getElementById(id);
 
-// Send command → ESP32 picks it up within ~2 s
+// ── Loading screen management ─────────────────────────────────────────────
+// ESP is "online" when /status/uptime exists (written every 5s by ESP).
+// We also check the /status/boot key for a quick initial signal.
+// We consider ESP offline if we haven't seen data in 15 seconds.
+let lastDataMs = 0;
+const OFFLINE_TIMEOUT = 15000;
+
+function showDashboard() {
+  if (espOnline) return;
+  espOnline = true;
+  const ls = $('loadScreen');
+  ls.classList.add('hiding');
+  setTimeout(() => { ls.style.display = 'none'; }, 520);
+  $('mainDash').classList.add('visible');
+}
+
+function showLoading(msg) {
+  espOnline = false;
+  $('loadStatusTxt').textContent = msg || 'Waiting for ESP32…';
+  $('loadScreen').style.display = 'flex';
+  $('loadScreen').classList.remove('hiding');
+  $('mainDash').classList.remove('visible');
+}
+
+// Periodic check: if no data for OFFLINE_TIMEOUT → show loading
+setInterval(() => {
+  if (espOnline && Date.now() - lastDataMs > OFFLINE_TIMEOUT) {
+    showLoading('ESP32 went offline — waiting for reconnect…');
+    $('loadHint').textContent = 'The ESP32 has not sent data for 15 seconds. Check power and Wi-Fi.';
+  }
+}, 3000);
+
+// ── Send command ──────────────────────────────────────────────────────────
 async function sendCmd(payload) {
   const r = push(ref(db, '/commands'));
   await set(r, { ...payload, ack: false, ts: Date.now() });
 }
 
-// ── Clock ────────────────────────────────────────────────────────────────
+// ── Clock ─────────────────────────────────────────────────────────────────
 let clockOffset = 0, clockReady = false;
 async function fetchClock() {
   try {
@@ -366,29 +463,39 @@ function tickClock() {
 }
 fetchClock(); setInterval(fetchClock,30*60*1000); setInterval(tickClock,1000);
 
-// ── Live Firebase listener ───────────────────────────────────────────────
+// ── Firebase listener ─────────────────────────────────────────────────────
+$('loadStatusTxt').textContent = 'Connected to Firebase — waiting for ESP32…';
+
 onValue(ref(db, '/status'), snap => {
   const data = snap.val();
-  if (!data) { $('liveBadge').textContent = 'Waiting for ESP32…'; return; }
+  if (!data || !data.uptime) {
+    // No valid status yet
+    showLoading('ESP32 not yet online — waiting…');
+    return;
+  }
+  lastDataMs = Date.now();
   dash = data;
+  showDashboard();
   render();
 });
 
-// ── Helpers ──────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────
 function mc(p){return p<0?'#94a3b8':p<20?'#ef4444':p<40?'#f97316':p<60?'#eab308':'#22c55e'}
 function setPill(id,txt,cls){const el=$(id);if(!el)return;el.textContent=txt;el.className='pill '+cls}
 function fmtDur(s){if(!s)return'—';const m=Math.floor(s/60),ss=s%60;return m?`${m}m ${ss}s`:`${ss}s`}
 function fmtMl(ml){return'~'+Math.round(ml||0)}
 
-// ── Render ───────────────────────────────────────────────────────────────
+// ── Render ────────────────────────────────────────────────────────────────
 function render() {
-  $('liveBadge').textContent = 'Live';
-
   const plants = dash.plants ? Object.values(dash.plants) : [];
   const active = plants.filter(p=>p.active);
-  setPill('esp32Status','Online','pg');
+
+  // System card — includes IP now
   $('sysUptime').textContent = dash.uptime||'—';
   $('sysPlants').textContent = `${active.length} / ${plants.length}`;
+  // IP address from ESP
+  const ipEl = $('sysIP');
+  if (ipEl) ipEl.textContent = dash.ip || '—';
 
   const isOn = !!dash.manualMode;
   $('manTog').classList.toggle('on',isOn);
@@ -433,7 +540,6 @@ function render() {
     $('lvMode').textContent=isOn?'Manual':'Auto'; $('lvMode').className='live-val '+(isOn?'warn':'ok');
   }
 
-  // empty state
   $('emptyBox').style.display = active.length?'none':'block';
 
   // plant cards
@@ -517,7 +623,7 @@ function refreshInfo(){
   }
 }
 
-// ── Modal wiring (exposed to global for inline onclick) ──────────────────
+// ── Modal wiring ──────────────────────────────────────────────────────────
 window.openManModal = () => {
   const isOn=dash&&dash.manualMode;
   $('manModalTitle').textContent=isOn?'Disable Manual Override':'Enable Manual Override';
