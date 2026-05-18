@@ -61,9 +61,8 @@
   });
 
   // ── Send a command to /commands/{index} ───────────────────────────
-  let cmdIdx = 0;
-  window.sendCmd = async function(cmdObj) {
-    const idx = cmdIdx++;
+window.sendCmd = async function(cmdObj) {
+  const idx = Date.now();
     const cmdRef = ref(db, `/commands/${idx}`);
     await set(cmdRef, { ...cmdObj, processed: false, sentAt: Math.floor(Date.now()/1000) });
   };
