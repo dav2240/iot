@@ -7,14 +7,470 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
-<!-- Firebase JS SDK (compat) -->
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<!-- Firebase SDK -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getDatabase, ref, onValue, set, get, update } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+  // ── Firebase config ───────────────────────────────────────────────
+  const firebaseConfig = {
+    apiKey:      "AIzaSyB8KWlGHwuIF2YvLUh0m6yKu7vjCEAJc3c",
+    databaseURL: "https://vadpro-8eb15-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId:   "vadpro-8eb15",
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db  = getDatabase(app);
+
+  // ── Expose to window so inline onclick handlers can call them ─────
+  window._db  = db;
+  window._ref = ref;
+  window._set = set;
+  window._get = get;
+  window._upd = update;
+
+  // ── Connection state: watch /status/lastSeen ──────────────────────
+  const OFFLINE_THRESHOLD_SEC = 30; // if lastSeen > 30s ago → offline
+
+  const statusRef = ref(db, "/status");
+  onValue(statusRef, snap => {
+    const s = snap.val();
+    if (!s) { showWaiting("No data from ESP yet…"); return; }
+
+    const now = Math.floor(Date.now() / 1000);
+    const lastSeen = s.lastSeen || 0;
+    const isOnline = (now - lastSeen) < OFFLINE_THRESHOLD_SEC;
+
+    if (!isOnline) {
+      const ago = now - lastSeen;
+      showWaiting(ago > 0
+        ? `ESP32 last seen ${fmtAgoSec(ago)} — waiting for reconnection…`
+        : "Waiting for ESP32 to connect…");
+      return;
+    }
+
+    // Online → show dashboard
+    hideMask();
+    applyStatus(s);
+  });
+
+  const plantsRef = ref(db, "/plants");
+  onValue(plantsRef, snap => {
+    const p = snap.val();
+    if (p) applyPlants(p);
+  });
+
+  // ── Send a command to /commands/{index} ───────────────────────────
+  let cmdIdx = 0;
+  window.sendCmd = async function(cmdObj) {
+    const idx = cmdIdx++;
+    const cmdRef = ref(db, `/commands/${idx}`);
+    await set(cmdRef, { ...cmdObj, processed: false, sentAt: Math.floor(Date.now()/1000) });
+  };
+
+  // ── Clock ─────────────────────────────────────────────────────────
+  let clockOffset = 0;
+  (async () => {
+    try {
+      const r = await fetch("https://worldtimeapi.org/api/timezone/Asia/Kolkata", {cache:"no-store"});
+      const d = await r.json();
+      clockOffset = new Date(d.datetime).getTime() - Date.now();
+    } catch(e) {}
+  })();
+  setInterval(() => {
+    const now = new Date(Date.now() + clockOffset);
+    let hr = now.getHours();
+    const ampm = hr >= 12 ? "PM" : "AM";
+    hr = hr % 12 || 12;
+    const pad = n => String(n).padStart(2,"0");
+    const mo  = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][now.getMonth()];
+    const el  = document.getElementById("rtClock");
+    if (el) el.textContent = `${pad(hr)}:${pad(now.getMinutes())}:${pad(now.getSeconds())} ${ampm}  ${pad(now.getDate())} ${mo}`;
+  }, 1000);
+
+  // ── Helpers ───────────────────────────────────────────────────────
+  function fmtAgoSec(sec) {
+    if (sec < 60)  return sec + "s ago";
+    if (sec < 3600) return Math.floor(sec/60) + "m ago";
+    return Math.floor(sec/3600) + "h ago";
+  }
+
+  function showWaiting(msg) {
+    document.getElementById("waitMsg").textContent = msg;
+    document.getElementById("waitMask").style.display = "flex";
+    document.getElementById("dashMain").style.display = "none";
+  }
+  function hideMask() {
+    document.getElementById("waitMask").style.display = "none";
+    document.getElementById("dashMain").style.display  = "block";
+  }
+
+  function mc(pct) {
+    if (pct < 0)  return "#94a3b8";
+    if (pct < 20) return "#ef4444";
+    if (pct < 40) return "#f97316";
+    if (pct < 60) return "#eab308";
+    return "#22c55e";
+  }
+
+  function setPill(id, text, cls) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = text;
+    el.className   = "pill " + cls;
+  }
+
+  function fmtDuration(sec) {
+    if (!sec) return "—";
+    const m = Math.floor(sec / 60), s = sec % 60;
+    return m > 0 ? `${m}m ${s}s` : `${s}s`;
+  }
+
+  function fmtMl(ml) { return "~" + Math.round(ml); }
+
+  function fmtAgo(sec) {
+    if (!sec) return "Never";
+    const now = Math.floor(Date.now()/1000);
+    const ago = now - sec;
+    if (ago < 60)    return ago + "s ago";
+    if (ago < 3600)  return Math.floor(ago/60) + "m ago";
+    if (ago < 86400) return Math.floor(ago/3600) + "h ago";
+    return Math.floor(ago/86400) + "d ago";
+  }
+
+  function uptimeStr(uptimeSec) {
+    const h = Math.floor(uptimeSec/3600),
+          m = Math.floor((uptimeSec%3600)/60),
+          s = uptimeSec%60;
+    return `${String(h).padStart(2,"0")}h ${String(m).padStart(2,"0")}m ${String(s).padStart(2,"0")}s`;
+  }
+
+  // ── Apply /status ─────────────────────────────────────────────────
+  function applyStatus(s) {
+    // System strip
+    const el = id => document.getElementById(id);
+    if (el("sysUptime"))  el("sysUptime").textContent  = uptimeStr(s.uptime || 0);
+    if (el("sysIP"))      el("sysIP").textContent       = s.espIP || "—";
+    if (el("sysPlants"))  el("sysPlants").textContent   = "—";
+
+    // live badge
+    el("liveBadge").textContent = "Live";
+
+    // manual toggle
+    const isOn = !!s.manualMode;
+    el("manTog").classList.toggle("on", isOn);
+    el("togLabelAuto").classList.toggle("active", !isOn);
+    el("togLabelMan").classList.toggle("active",  isOn);
+    el("manHint").textContent  = isOn ? "Override active — tap to disable" : "Tap to enable manual relay override";
+    el("manHint").classList.toggle("active", isOn);
+    window._manualMode = isOn;
+
+    // hardware health
+    const s0 = s.sensor0 || {};
+    const r0 = s.relay0  || {};
+    if (s0.connected) setPill("soilStatus0","Connected","pg");
+    else              setPill("soilStatus0","Disconnected","pr");
+
+    const fs = r0.status;
+    if (fs === 1)     setPill("flowStatus0","Connected","pg");
+    else if (fs === 2) setPill("flowStatus0","Disconnected","pr");
+    else              setPill("flowStatus0","Idle","pg-dim");
+
+    setPill("relayStatus0","Unknown","pg-dim");
+    setPill("sdStatus","Not Available","pr");
+
+    // live readings sidebar — filled when plants arrive
+    el("lvRaw").textContent = s0.rawADC !== undefined ? s0.rawADC : "—";
+    el("lvMode").textContent = isOn ? "Manual" : "Auto";
+    el("lvMode").className   = "live-val " + (isOn ? "warn" : "ok");
+
+    // alerts
+    const alertsObj = s.alerts || {};
+    const alertKeys = Object.keys(alertsObj).map(Number).sort((a,b)=>b-a);
+    const al = el("alertList");
+    if (alertKeys.length) {
+      al.innerHTML = alertKeys.slice(0,40).map(k => {
+        const a = alertsObj[k] || "";
+        const parts = a.split("|");
+        if (parts.length >= 3) {
+          const ago = parts[0].trim(), time = parts[1].trim(), msg = parts.slice(2).join("|").trim();
+          return `<div class="arow"><span class="a-t">${ago} · ${time}</span><span class="a-m">${msg}</span></div>`;
+        }
+        return `<div class="arow"><span class="a-t">—</span><span class="a-m">${a}</span></div>`;
+      }).join("");
+    } else {
+      al.innerHTML = '<div class="arow"><span class="a-t">—</span><span class="a-m">No alerts yet</span></div>';
+    }
+  }
+
+  // ── Apply /plants ─────────────────────────────────────────────────
+  const SENSOR_NAMES = ["Soil Sensor"];
+  const RELAY_NAMES  = ["Relay"];
+  const MAX_PLANTS   = 1;
+  const TOTAL_SENSORS = 1;
+  const TOTAL_RELAYS  = 1;
+
+  let _plants = [];
+  let _infoIdx = -1;
+
+  function applyPlants(raw) {
+    _plants = [];
+    for (let i = 0; i < MAX_PLANTS; i++) {
+      const p = raw[i];
+      if (!p || !p.active) continue;
+      _plants.push({ ...p, index: i });
+    }
+
+    const el = id => document.getElementById(id);
+
+    // update sysPlants
+    let actives = _plants.length;
+    if (el("sysPlants")) el("sysPlants").textContent = actives + " / " + MAX_PLANTS;
+
+    // empty state
+    el("emptyBox").style.display = _plants.length ? "none" : "block";
+
+    // live readings
+    if (_plants.length > 0) {
+      const p = _plants[0];
+      const totalDelivered = (p.deliveredMl || 0) + (p.pausedMl || 0);
+      const lv = (id, val, cls) => { const e=el(id); e.textContent=val; e.className="live-val "+(cls||""); };
+      lv("lvSoil", p.soilPct >= 0 ? p.soilPct + "%" : "—", p.soilPct > p.moistureStartPct ? "ok" : "warn");
+      lv("lvFlow", "~" + (p.flowRateLMin || 0).toFixed(3) + " L/min", p.isWatering ? "ind" : "dim");
+      lv("lvVol",  fmtMl(totalDelivered) + " mL", p.isWatering ? "ind" : "dim");
+      lv("lvPump", p.isWatering ? "ON 💧" : "OFF", p.isWatering ? "ok" : "dim");
+    }
+
+    // render cards
+    const cards = el("plantCards");
+    cards.innerHTML = "";
+    _plants.forEach(p => {
+      const col  = mc(p.soilPct);
+      const isW  = p.isWatering;
+      const isP  = p.paused;
+      const isM  = !!window._manualMode;
+      const totalDelivered = (p.deliveredMl || 0) + (p.pausedMl || 0);
+      const progPct = p.waterAmountMl > 0 ? Math.min(100, Math.round((totalDelivered / p.waterAmountMl) * 100)) : 0;
+
+      let status = "Monitoring";
+      if (isP) status = "Paused";
+      else if (isM) status = "Manual mode";
+      else if (isW) status = "Working";
+      else if (!p.sensorFault && p.soilPct >= 0 && p.soilPct > p.moistureStartPct) status = "Wet enough";
+      else if (p.sensorFault) status = "Needs attention";
+
+      const statusClass = {
+        "Working":"pb","Monitoring":"pg-dim","Wet enough":"pg",
+        "Paused":"pa","Manual mode":"pm","Needs attention":"pr"
+      }[status] || "pg-dim";
+
+      const lwStr = fmtAgo(p.lastWateredSec);
+
+      cards.innerHTML += `
+      <div class="card glass"><div class="c-in">
+        <div class="c-head">
+          <div style="min-width:0"><div class="c-name">${p.plantName}</div><div class="c-sub">${SENSOR_NAMES[p.sensorId]||"Sensor"} &nbsp;·&nbsp; ${RELAY_NAMES[p.relayId]||"Relay"}</div></div>
+          <div class="c-badges"><span class="pill ${statusClass}">${status}</span>${isW?'<span class="pill pb">💧 Watering</span>':''}${(p.pausedMl||0)>0&&!isW?`<span class="pill pa">⏸ ~${Math.round(p.pausedMl)}mL saved</span>`:''}</div>
+        </div>
+        ${isW?`<div class="prog-row"><span class="prog-label">~${Math.round(totalDelivered)} / ${p.waterAmountMl} mL</span><div class="prog-track"><div class="prog-fill" style="width:${progPct}%"></div></div><span class="prog-pct">${progPct}%</span></div>`:''}
+        <div class="metrics">
+          <div><div class="m-lbl">Soil Moisture</div><div class="m-val" style="color:${col}">${p.soilPct>=0?p.soilPct:'—'}<span class="unit">%</span></div><div class="mbar"><div class="mfill" style="width:${Math.max(0,p.soilPct||0)}%;background:${col}"></div></div><div class="m-sub">starts ≤ ${p.moistureStartPct}%</div></div>
+          <div><div class="m-lbl">Flow Rate</div><div class="m-val">~${(p.flowRateLMin||0).toFixed(3)}<span class="unit">L/m</span></div><div class="m-sub">±15% approx</div></div>
+          <div><div class="m-lbl">${isW?'Delivered':'Last Session'}</div><div class="m-val" style="font-size:16px">${isW?fmtMl(totalDelivered):fmtMl(p.lastSessionMl||0)}<span class="unit">mL</span></div><div class="m-sub">${isW?'target '+p.waterAmountMl+' mL':'~ approx'}</div></div>
+          <div><div class="m-lbl">Pump</div><div class="m-val" style="color:${isW?'#22c55e':'#cbd5e1'};font-size:16px">${isW?'ON':'OFF'}</div><div class="m-sub">${RELAY_NAMES[p.relayId]||"Relay"}</div></div>
+          <div><div class="m-lbl">Last Watered</div><div class="m-val" style="font-size:12px;padding-top:3px">${lwStr}</div><div class="m-sub">every ${p.frequencyHours}h</div></div>
+        </div>
+        <div class="c-divider"></div>
+        <div class="c-actions">
+          <button class="btn btn-b sm" onclick="openInfoModal(${p.index})">📊 Details</button>
+          <div class="c-actions-right">
+            ${isM?`<button class="btn ${isP?'btn-p':'btn-a'} sm" onclick="togglePause(${p.index},${isP?0:1})">${isP?'▶ Resume':'⏸ Pause'}</button>`:''}
+            <button class="btn btn-g sm" onclick="openEditModal(${p.index})">✏ Edit</button>
+            <button class="btn btn-d sm icon-only" onclick="openDelModal(${p.index})" title="Delete">🗑</button>
+          </div>
+        </div>
+      </div></div>`;
+    });
+
+    if (_infoIdx >= 0) openInfoModal(_infoIdx);
+  }
+
+  // ── Modal helpers ─────────────────────────────────────────────────
+  window.openManModal = function() {
+    const isOn = !!window._manualMode;
+    document.getElementById("manModalTitle").textContent = isOn ? "Disable Manual Override" : "Enable Manual Override";
+    document.getElementById("manModalDesc").textContent  = isOn
+      ? "Automation will resume and plants will be watered on schedule."
+      : "Automation pauses. You can still pause/resume individual plants.";
+    const act = document.getElementById("manModalActions");
+    act.innerHTML = "";
+    const cancel = document.createElement("button");
+    cancel.className = "btn btn-g"; cancel.textContent = "Cancel"; cancel.onclick = closeManModal;
+    if (isOn) {
+      const b = document.createElement("button");
+      b.className = "btn btn-p"; b.textContent = "✅ Disable Override";
+      b.onclick = () => doSetManual(0, 0);
+      act.appendChild(cancel); act.appendChild(b);
+    } else {
+      const b = document.createElement("button");
+      b.className = "btn btn-b"; b.textContent = "⚡ Enable Override";
+      b.onclick = () => doSetManual(1, 0);
+      act.appendChild(cancel); act.appendChild(b);
+    }
+    document.getElementById("manOvl").classList.add("show");
+  };
+  window.closeManModal = function() { document.getElementById("manOvl").classList.remove("show"); };
+  window.doSetManual   = async function(state, offAll) {
+    await window.sendCmd({ type: "manualMode", state, offAll });
+    closeManModal();
+  };
+
+  window.openCreateModal = function() {
+    document.getElementById("fTitle").textContent = "Add New Plant";
+    document.getElementById("eIdx").value = "-1";
+    document.getElementById("pName").value  = "";
+    document.getElementById("wAmt").value   = "";
+    document.getElementById("fHrs").value   = "24";
+    document.getElementById("mStart").value = "";
+    fillSensors(null, -1);
+    fillRelays(null, -1);
+    document.getElementById("formOvl").classList.add("show");
+  };
+
+  window.openEditModal = function(idx) {
+    const p = _plants.find(x => x.index === idx);
+    if (!p) return;
+    document.getElementById("fTitle").textContent = "Edit Plant";
+    document.getElementById("eIdx").value  = idx;
+    document.getElementById("pName").value = p.plantName;
+    document.getElementById("wAmt").value  = p.waterAmountMl;
+    document.getElementById("fHrs").value  = p.frequencyHours;
+    document.getElementById("mStart").value= p.moistureStartPct;
+    fillSensors(p.sensorId, idx);
+    fillRelays(p.relayId, idx);
+    document.getElementById("formOvl").classList.add("show");
+  };
+
+  window.closeFModal = function() { document.getElementById("formOvl").classList.remove("show"); };
+
+  function sensorAssigned(id, skip = -1) {
+    return _plants.some(p => p.index !== skip && p.sensorId === id);
+  }
+  function relayAssigned(id, skip = -1) {
+    return _plants.some(p => p.index !== skip && p.relayId === id);
+  }
+
+  function fillSensors(currentId, editIdx) {
+    const el = document.getElementById("sSel"); el.innerHTML = "";
+    let avail = 0;
+    for (let i = 0; i < TOTAL_SENSORS; i++) {
+      const opt = document.createElement("option"); opt.value = i;
+      const taken = sensorAssigned(i) && i !== currentId;
+      if (taken) { opt.textContent = SENSOR_NAMES[i] + " — in use"; opt.disabled = true; opt.style.color = "#bbb"; }
+      else        { opt.textContent = SENSOR_NAMES[i] + (i === currentId && sensorAssigned(i) ? " (current)" : ""); avail++; }
+      el.appendChild(opt);
+    }
+    if (currentId !== null && currentId !== undefined) el.value = currentId;
+    document.getElementById("warnSensor").style.display = avail === 0 ? "block" : "none";
+  }
+
+  function fillRelays(currentId, editIdx) {
+    const el = document.getElementById("rSel"); el.innerHTML = "";
+    let avail = 0;
+    for (let i = 0; i < TOTAL_RELAYS; i++) {
+      const opt = document.createElement("option"); opt.value = i;
+      const taken = relayAssigned(i) && i !== currentId;
+      if (taken) { opt.textContent = RELAY_NAMES[i] + " — in use"; opt.disabled = true; opt.style.color = "#bbb"; }
+      else        { opt.textContent = RELAY_NAMES[i] + (i === currentId && relayAssigned(i) ? " (current)" : ""); avail++; }
+      el.appendChild(opt);
+    }
+    if (currentId !== null && currentId !== undefined) el.value = currentId;
+    document.getElementById("warnRelay").style.display = avail === 0 ? "block" : "none";
+  }
+
+  window.savePlant = async function() {
+    const idx    = document.getElementById("eIdx").value;
+    const name   = document.getElementById("pName").value.trim();
+    const sEl    = document.getElementById("sSel");
+    const rEl    = document.getElementById("rSel");
+    const sensor = parseInt(sEl.value);
+    const relay  = parseInt(rEl.value);
+    const amt    = parseInt(document.getElementById("wAmt").value);
+    const freq   = parseInt(document.getElementById("fHrs").value);
+    const ms     = parseInt(document.getElementById("mStart").value);
+
+    if (sEl.options[sEl.selectedIndex]?.disabled) { alert("Selected sensor is already in use."); return; }
+    if (rEl.options[rEl.selectedIndex]?.disabled) { alert("Selected relay is already in use.");  return; }
+    if (!name || isNaN(sensor) || isNaN(relay) || isNaN(amt) || isNaN(ms)) { alert("Please fill in all fields."); return; }
+    if (ms < 0 || ms > 99) { alert("Start moisture must be 0–99%."); return; }
+    if (amt < 1)            { alert("Target volume must be at least 1 mL."); return; }
+
+    const cmdType = parseInt(idx) >= 0 ? "editPlant" : "addPlant";
+    const cmd = { type: cmdType, name, sensor, relay, amount: amt, freq, mstart: ms };
+    if (parseInt(idx) >= 0) cmd.index = parseInt(idx);
+
+    await window.sendCmd(cmd);
+    closeFModal();
+  };
+
+  let _delIdx = -1;
+  window.openDelModal  = function(idx) { _delIdx = idx; document.getElementById("delOvl").classList.add("show"); };
+  window.closeDelModal = function()    { _delIdx = -1; document.getElementById("delOvl").classList.remove("show"); };
+  window.confirmDelete = async function() {
+    if (_delIdx < 0) return;
+    await window.sendCmd({ type: "deletePlant", index: _delIdx });
+    closeDelModal();
+  };
+
+  window.togglePause = async function(idx, pause) {
+    await window.sendCmd({ type: "pausePlant", index: idx, paused: pause });
+  };
+
+  window.openInfoModal = function(idx) {
+    _infoIdx = idx;
+    const p = _plants.find(x => x.index === idx);
+    if (!p) return;
+    const el = id => document.getElementById(id);
+    el("infoPlantName").textContent = p.plantName;
+    el("infoPlantSub").textContent  = (SENSOR_NAMES[p.sensorId]||"Sensor") + " · " + (RELAY_NAMES[p.relayId]||"Relay");
+    el("iSoil").innerHTML      = (p.soilPct >= 0 ? p.soilPct : "—") + '<span class="unit">%</span>';
+    el("iLastMl").innerHTML    = fmtMl(p.lastSessionMl||0) + '<span class="unit">mL</span>';
+    el("iLastTime").textContent= fmtAgo(p.lastWateredSec);
+    el("iWeekMl").innerHTML    = fmtMl(p.weekWateredMl||0) + '<span class="unit">mL</span>';
+    el("iTotalMl").innerHTML   = fmtMl(p.totalWateredMl||0) + '<span class="unit">mL</span>';
+    el("iTarget").innerHTML    = p.waterAmountMl + '<span class="unit">mL</span>';
+    el("iThresh").innerHTML    = p.moistureStartPct + '<span class="unit">%</span>';
+    el("iFreq").innerHTML      = p.frequencyHours + '<span class="unit">h</span>';
+
+    const sessions = p.sessions ? Object.values(p.sessions).filter(Boolean) : [];
+    el("iSessCount").textContent = sessions.length;
+    const tbody = el("sessBody"); tbody.innerHTML = "";
+    if (!sessions.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="sess-empty">No sessions yet.</td></tr>';
+    } else {
+      [...sessions].reverse().forEach((s, i) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td style="color:#94a3b8;font-size:10.5px">${sessions.length - i}</td><td style="font-family:monospace;font-size:11px">${s.startSec ? fmtAgo(s.startSec) : "—"}</td><td>${fmtDuration(s.durationSec)}</td><td><strong>${fmtMl(s.deliveredMl)}</strong> mL</td><td><span class="sess-badge auto">Auto</span></td>`;
+        tbody.appendChild(tr);
+      });
+    }
+    el("infoOvl").classList.add("show");
+  };
+  window.closeInfoModal = function() { document.getElementById("infoOvl").classList.remove("show"); _infoIdx = -1; };
+</script>
 
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Outfit',sans-serif;min-height:100vh;background:#eef1f7;color:#111;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+
+/* ── Waiting mask ── */
+#waitMask{position:fixed;inset:0;background:rgba(238,241,247,.97);backdrop-filter:blur(24px);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
+.wait-icon{font-size:64px;animation:breathe 2.4s ease-in-out infinite}
+@keyframes breathe{0%,100%{transform:scale(1);opacity:.85}50%{transform:scale(1.08);opacity:1}}
+.wait-title{font-size:22px;font-weight:800;color:#1e293b}
+#waitMsg{font-size:14px;color:#64748b;max-width:340px;text-align:center;line-height:1.55}
+.wait-spinner{width:38px;height:38px;border:3.5px solid rgba(99,102,241,.15);border-top-color:#6366f1;border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 
 /* ── Blobs ── */
 .blob{position:fixed;border-radius:50%;filter:blur(90px);z-index:0;pointer-events:none}
@@ -27,22 +483,6 @@ body{font-family:'Outfit',sans-serif;min-height:100vh;background:#eef1f7;color:#
 
 /* ── Glass ── */
 .glass{background:rgba(255,255,255,.26);backdrop-filter:blur(30px) saturate(160%);-webkit-backdrop-filter:blur(30px) saturate(160%);border:1px solid rgba(255,255,255,.6);box-shadow:0 8px 32px rgba(0,0,0,.06),inset 0 1.5px 0 rgba(255,255,255,.75),inset 0 -1px 0 rgba(0,0,0,.03)}
-
-/* ── Waiting overlay ── */
-.waiting-screen{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;
-  background:rgba(238,241,247,.92);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)}
-.waiting-screen.hidden{display:none}
-.waiting-box{text-align:center;padding:48px 40px;border-radius:32px;max-width:420px;width:90%}
-.waiting-icon{font-size:64px;margin-bottom:20px;display:block}
-.waiting-spinner{width:48px;height:48px;border:4px solid rgba(99,102,241,.15);border-top-color:#6366f1;
-  border-radius:50%;animation:spin 0.9s linear infinite;margin:0 auto 20px}
-@keyframes spin{to{transform:rotate(360deg)}}
-.waiting-title{font-size:22px;font-weight:800;color:#1e293b;margin-bottom:8px}
-.waiting-sub{font-size:14px;color:#64748b;line-height:1.6;margin-bottom:20px}
-.waiting-hint{font-size:12px;color:#94a3b8;display:flex;align-items:center;justify-content:center;gap:6px}
-.waiting-dot{width:6px;height:6px;border-radius:50%;background:#6366f1;animation:wdot 1.4s ease infinite}
-.waiting-dot:nth-child(2){animation-delay:.2s}.waiting-dot:nth-child(3){animation-delay:.4s}
-@keyframes wdot{0%,80%,100%{transform:scale(0);opacity:.3}40%{transform:scale(1);opacity:1}}
 
 /* ── Topbar ── */
 .topbar{background:rgba(255,255,255,.3);backdrop-filter:blur(34px) saturate(180%);-webkit-backdrop-filter:blur(34px) saturate(180%);border-bottom:1px solid rgba(255,255,255,.55);box-shadow:0 2px 18px rgba(0,0,0,.05);padding:13px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
@@ -86,6 +526,7 @@ body{font-family:'Outfit',sans-serif;min-height:100vh;background:#eef1f7;color:#
 .pb{background:rgba(99,102,241,.1);color:#4338ca;border:1px solid rgba(99,102,241,.2)}
 .pm{background:rgba(168,85,247,.1);color:#7e22ce;border:1px solid rgba(168,85,247,.2)}
 .pg-dim{background:rgba(148,163,184,.08);color:#64748b;border:1px solid rgba(148,163,184,.2)}
+.pinfo{background:rgba(99,102,241,.08);color:#4338ca;border:1px solid rgba(99,102,241,.18)}
 
 /* ── Buttons ── */
 .btn{border:none;border-radius:999px;padding:9px 20px;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s ease;display:inline-flex;align-items:center;justify-content:center;gap:5px;font-family:'Outfit',sans-serif;white-space:nowrap;line-height:1;text-decoration:none}
@@ -95,7 +536,9 @@ body{font-family:'Outfit',sans-serif;min-height:100vh;background:#eef1f7;color:#
 .btn-d{background:rgba(239,68,68,.85);color:#fff;box-shadow:0 4px 14px rgba(239,68,68,.25),inset 0 1px 0 rgba(255,255,255,.25)}
 .btn-d:hover{background:rgba(220,38,38,.92)}
 .btn-b{background:rgba(59,130,246,.85);color:#fff;box-shadow:0 4px 14px rgba(59,130,246,.25),inset 0 1px 0 rgba(255,255,255,.25)}
+.btn-b:hover{background:rgba(37,99,235,.92)}
 .btn-a{background:rgba(245,158,11,.85);color:#fff;box-shadow:0 4px 14px rgba(245,158,11,.25),inset 0 1px 0 rgba(255,255,255,.25)}
+.btn-a:hover{background:rgba(217,119,6,.92)}
 .btn-g{background:rgba(255,255,255,.5);color:#374151;border:1px solid rgba(255,255,255,.7);backdrop-filter:blur(8px);box-shadow:0 2px 8px rgba(0,0,0,.05)}
 .btn-g:hover{background:rgba(255,255,255,.7)}
 .btn.sm{padding:6px 13px;font-size:12px}
@@ -155,7 +598,6 @@ body{font-family:'Outfit',sans-serif;min-height:100vh;background:#eef1f7;color:#
 .live-item .live-val.dim{color:#94a3b8}
 .live-approx{font-size:9px;color:#b0b8c8;font-weight:500;margin-top:1px}
 
-/* ── Modals ── */
 .overlay{position:fixed;inset:0;background:rgba(15,23,42,.25);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);display:none;align-items:flex-start;justify-content:center;padding:14px;z-index:999;overflow-y:auto}
 .overlay.show{display:flex}
 .modal{width:min(780px,100%);background:rgba(255,255,255,.93);backdrop-filter:blur(48px) saturate(200%);-webkit-backdrop-filter:blur(48px) saturate(200%);border:1px solid rgba(255,255,255,.82);border-radius:30px;padding:26px 26px 30px;box-shadow:0 20px 56px rgba(0,0,0,.12),inset 0 1.5px 0 rgba(255,255,255,.95);animation:mIn .18s ease;margin:auto}
@@ -173,7 +615,6 @@ body{font-family:'Outfit',sans-serif;min-height:100vh;background:#eef1f7;color:#
 .field-hint{font-size:10.5px;color:#94a3b8;margin-top:4px;line-height:1.4}
 .m-actions{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:20px}
 
-/* ── Info modal ── */
 .info-modal{width:min(840px,100%)}
 .info-header{display:flex;align-items:center;gap:13px;margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid rgba(0,0,0,.05)}
 .info-icon{font-size:38px}
@@ -193,15 +634,11 @@ body{font-family:'Outfit',sans-serif;min-height:100vh;background:#eef1f7;color:#
 .sess-table th{font-size:8.5px;font-weight:700;letter-spacing:1.3px;text-transform:uppercase;color:#b0b8c8;padding:5px 9px;text-align:left;border-bottom:1px solid rgba(0,0,0,.05)}
 .sess-table td{font-size:12px;font-weight:500;color:#374151;padding:8px 9px;border-bottom:1px solid rgba(0,0,0,.04)}
 .sess-table tr:last-child td{border-bottom:none}
+.sess-table tr:hover td{background:rgba(0,0,0,.015)}
 .sess-badge{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:999px;font-size:10px;font-weight:600}
 .sess-badge.auto{background:rgba(99,102,241,.1);color:#4338ca}
 .sess-badge.manual{background:rgba(59,130,246,.1);color:#1d4ed8}
 .sess-empty{text-align:center;padding:24px;color:#94a3b8;font-size:12.5px}
-
-/* ── Pending command toast ── */
-.cmd-toast{position:fixed;bottom:20px;right:20px;background:rgba(15,23,42,.92);color:#e2e8f0;padding:12px 18px;border-radius:14px;font-size:13px;font-weight:500;z-index:9998;display:none;align-items:center;gap:10px;box-shadow:0 8px 24px rgba(0,0,0,.2);backdrop-filter:blur(8px)}
-.cmd-toast.show{display:flex}
-.cmd-toast-spinner{width:14px;height:14px;border:2px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
 
 @media(max-width:1050px){.sstrip{grid-template-columns:1fr 1fr}.lower{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(3,1fr)}.fgrid{grid-template-columns:1fr 1fr}.stat-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:640px){.sstrip{grid-template-columns:1fr}.c-head{flex-direction:column}.c-badges{justify-content:flex-start}.topbar-brand{font-size:16px}.topbar-clock{font-size:11px}.metrics{grid-template-columns:1fr 1fr}.fgrid{grid-template-columns:1fr}.frow2{grid-template-columns:1fr}.stat-grid{grid-template-columns:1fr 1fr}.c-actions{flex-wrap:wrap}}
@@ -209,37 +646,21 @@ body{font-family:'Outfit',sans-serif;min-height:100vh;background:#eef1f7;color:#
 </head>
 <body>
 
-<!-- ── Blobs ── -->
+<!-- ── Waiting / offline mask ── -->
+<div id="waitMask">
+  <div class="wait-icon">🌿</div>
+  <div class="wait-title">VAD-e Plant Monitor</div>
+  <div id="waitMsg">Connecting to Firebase…</div>
+  <div class="wait-spinner"></div>
+</div>
+
+<!-- ── Main dashboard (hidden until ESP is online) ── -->
+<div id="dashMain" style="display:none">
+
 <div class="blob b1"></div>
 <div class="blob b2"></div>
 <div class="blob b3"></div>
 
-<!-- ════════════════════════════════════════════════════════════
-     WAITING FOR ESP OVERLAY
-     Shown until Firebase heartbeat is fresh (< 15 s old)
-     ════════════════════════════════════════════════════════════ -->
-<div class="waiting-screen glass" id="waitingScreen">
-  <div class="waiting-box glass">
-    <span class="waiting-icon">🌱</span>
-    <div class="waiting-spinner"></div>
-    <div class="waiting-title">Waiting for ESP32…</div>
-    <div class="waiting-sub">The device hasn't sent a heartbeat recently. Make sure it's powered on and connected to WiFi.</div>
-    <div class="waiting-hint">
-      <div class="waiting-dot"></div>
-      <div class="waiting-dot"></div>
-      <div class="waiting-dot"></div>
-      <span id="waitStatus">Connecting to Firebase</span>
-    </div>
-  </div>
-</div>
-
-<!-- ── Command sending toast ── -->
-<div class="cmd-toast" id="cmdToast">
-  <div class="cmd-toast-spinner"></div>
-  <span id="cmdToastMsg">Sending command…</span>
-</div>
-
-<!-- ── Topbar ── -->
 <div class="topbar">
   <div class="topbar-brand">🌿 VAD-e Dashboard</div>
   <div class="topbar-right">
@@ -249,16 +670,12 @@ body{font-family:'Outfit',sans-serif;min-height:100vh;background:#eef1f7;color:#
 </div>
 
 <div class="wrap">
-  <!-- ── Status strip ── -->
   <div class="sstrip">
     <div class="glass scard">
       <div class="scard-title">System</div>
-      <div class="srow">
-        <span class="srow-lbl">ESP32 IP</span>
-        <span class="srow-val" id="sysESPIP" style="font-family:monospace;font-size:12px;color:#6366f1">—</span>
-      </div>
+      <div class="srow"><span class="srow-lbl">ESP32</span><span class="pill pg">Online</span></div>
+      <div class="srow"><span class="srow-lbl">IP Address</span><span class="srow-val" id="sysIP">—</span></div>
       <div class="srow"><span class="srow-lbl">Uptime</span><span class="srow-val" id="sysUptime">—</span></div>
-      <div class="srow"><span class="srow-lbl">Time (ESP)</span><span class="srow-val" id="sysTime">—</span></div>
       <div class="srow"><span class="srow-lbl">Plants</span><span class="srow-val" id="sysPlants">—</span></div>
     </div>
     <div class="glass scard">
@@ -286,7 +703,7 @@ body{font-family:'Outfit',sans-serif;min-height:100vh;background:#eef1f7;color:#
   <div class="glass empty" id="emptyBox">
     <div class="empty-ico">🌱</div>
     <h2>No plants added yet</h2>
-    <p>Create your first plant profile to begin automated irrigation.</p>
+    <p>Create your first plant profile to begin automated irrigation. Set a moisture threshold and target water volume — the flow sensor handles the rest.</p>
     <button class="btn btn-p" onclick="openCreateModal()">Create First Plant</button>
   </div>
 
@@ -311,7 +728,7 @@ body{font-family:'Outfit',sans-serif;min-height:100vh;background:#eef1f7;color:#
   </div>
 </div>
 
-<!-- ── CREATE / EDIT MODAL ── -->
+<!-- CREATE / EDIT MODAL -->
 <div class="overlay" id="formOvl">
 <div class="modal">
   <div class="m-title" id="fTitle">Add New Plant</div>
@@ -321,7 +738,7 @@ body{font-family:'Outfit',sans-serif;min-height:100vh;background:#eef1f7;color:#
   <div class="fgrid">
     <div class="field"><label>Plant Name</label><input id="pName"></div>
     <div class="field"><label>Soil Sensor</label><select id="sSel"></select></div>
-    <div class="field"><label>Relay</label><select id="rSel"></select></div>
+    <div class="field"><label>Relay 1</label><select id="rSel"></select></div>
   </div>
   <div class="frow2">
     <div class="field">
@@ -344,6 +761,7 @@ body{font-family:'Outfit',sans-serif;min-height:100vh;background:#eef1f7;color:#
         <option value="12">Every 12 hours</option><option value="24" selected>Every 24 hours</option>
         <option value="48">Every 2 days</option><option value="72">Every 3 days</option>
       </select>
+      <div class="field-hint">How often to check if watering is needed</div>
     </div>
   </div>
   <div class="m-actions">
@@ -353,7 +771,7 @@ body{font-family:'Outfit',sans-serif;min-height:100vh;background:#eef1f7;color:#
 </div>
 </div>
 
-<!-- ── DELETE MODAL ── -->
+<!-- DELETE MODAL -->
 <div class="overlay" id="delOvl">
 <div class="modal sm">
   <div class="m-title">Delete Plant?</div>
@@ -365,7 +783,7 @@ body{font-family:'Outfit',sans-serif;min-height:100vh;background:#eef1f7;color:#
 </div>
 </div>
 
-<!-- ── MANUAL MODAL ── -->
+<!-- MANUAL MODAL -->
 <div class="overlay" id="manOvl">
 <div class="modal sm">
   <div class="m-title" id="manModalTitle">Manual RELAY Override</div>
@@ -374,7 +792,7 @@ body{font-family:'Outfit',sans-serif;min-height:100vh;background:#eef1f7;color:#
 </div>
 </div>
 
-<!-- ── PLANT INFO MODAL ── -->
+<!-- PLANT INFO MODAL -->
 <div class="overlay" id="infoOvl">
 <div class="modal info-modal">
   <div class="info-header">
@@ -399,504 +817,16 @@ body{font-family:'Outfit',sans-serif;min-height:100vh;background:#eef1f7;color:#
     <div class="stat-card"><div class="stat-lbl">Check Interval</div><div class="stat-val" id="iFreq">—<span class="unit">h</span></div><div class="stat-sub">automation cadence</div></div>
     <div class="stat-card"><div class="stat-lbl">Sessions</div><div class="stat-val" id="iSessCount">—</div><div class="stat-sub">completed</div></div>
   </div>
-  <div class="sess-title">💧 Session History <span style="font-size:10.5px;color:#94a3b8;font-weight:500">(most recent first)</span></div>
+  <div class="sess-title">💧 Session History <span style="font-size:10.5px;color:#94a3b8;font-weight:500">(most recent first · up to 20)</span></div>
   <div style="overflow-x:auto">
     <table class="sess-table">
-      <thead><tr><th>#</th><th>Started at</th><th>Duration</th><th>~ Volume</th><th>Type</th></tr></thead>
+      <thead><tr><th>#</th><th>Started</th><th>Duration</th><th>~ Volume</th><th>Type</th></tr></thead>
       <tbody id="sessBody"></tbody>
     </table>
   </div>
 </div>
 </div>
 
-<script>
-// ══════════════════════════════════════════════════════════════════
-//  FIREBASE CONFIG
-//  These match what's in your vade.ino exactly.
-// ══════════════════════════════════════════════════════════════════
-const FIREBASE_CONFIG = {
-  apiKey:      "AIzaSyB8KWlGHwuIF2YvLUh0m6yKu7vjCEAJc3c",
-  databaseURL: "https://vadpro-8eb15-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId:   "vadpro-8eb15",
-  authDomain:  "vadpro-8eb15.firebaseapp.com"
-};
-
-// How many seconds old a heartbeat can be before we show "waiting"
-const HEARTBEAT_TIMEOUT_S = 20;
-
-// ── State ──────────────────────────────────────────────────────
-let dash    = null;
-let delIdx  = -1;
-let infoIdx = -1;
-let db      = null;
-let clockOffset = 0;
-let clockReady  = false;
-const $ = id => document.getElementById(id);
-
-// ══════════════════════════════════════════════════════════════════
-//  FIREBASE INIT
-// ══════════════════════════════════════════════════════════════════
-firebase.initializeApp(FIREBASE_CONFIG);
-const auth = firebase.auth();
-db          = firebase.database();
-
-$('waitStatus').textContent = 'Signing in anonymously…';
-
-auth.signInAnonymously()
-  .then(() => {
-    $('waitStatus').textContent = 'Connected — waiting for ESP32 heartbeat…';
-    startListening();
-  })
-  .catch(err => {
-    $('waitStatus').textContent = 'Auth error: ' + err.message;
-    console.error('Firebase auth error', err);
-  });
-
-// ══════════════════════════════════════════════════════════════════
-//  REALTIME LISTENER  — /status
-// ══════════════════════════════════════════════════════════════════
-function startListening() {
-  db.ref('/status').on('value', snap => {
-    const raw = snap.val();
-    if (!raw) {
-      showWaiting('Firebase returned no data yet.');
-      return;
-    }
-
-    const hb   = raw.heartbeat;           // unix timestamp written by ESP
-    const nowS = Math.floor(Date.now() / 1000);
-
-    if (!hb || (nowS - hb) > HEARTBEAT_TIMEOUT_S) {
-      const ago = hb ? `${nowS - hb}s ago` : 'never';
-      showWaiting(`Last heartbeat: ${ago}. ESP32 may be offline.`);
-      return;
-    }
-
-    // ESP is alive — build the dash object from Firebase data
-    dash = buildDashFromFirebase(raw);
-    hideWaiting();
-    updateUI(dash, raw.ip);
-  });
-}
-
-// ── Convert Firebase /status shape → the same "dash" object the UI expects ──
-function buildDashFromFirebase(raw) {
-  // Firebase stores arrays as objects with numeric keys — normalise them
-  const arr = v => {
-    if (!v) return [];
-    if (Array.isArray(v)) return v;
-    return Object.keys(v).sort((a,b)=>Number(a)-Number(b)).map(k=>v[k]);
-  };
-
-  return {
-    uptime:       raw.uptime        || '—',
-    activePlants: raw.activePlants  || 0,
-    totalPlants:  raw.totalPlants   || 1,
-    manualMode:   raw.manualMode    || false,
-    sdAvailable:  raw.sdAvailable   || false,
-    rawADC:       arr(raw.rawADC),
-    sensorHealth: arr(raw.sensorHealth),
-    flowHealth:   arr(raw.flowHealth),
-    relayHealth:  arr(raw.relayHealth),
-    sensors:      arr(raw.sensors),
-    relays:       arr(raw.relays),
-    plants:       arr(raw.plants).map(p => ({
-                    ...p,
-                    sessions: arr(p && p.sessions)
-                  })),
-    alerts:       arr(raw.alerts),
-    flowAccuracyPct: 15
-  };
-}
-
-// ══════════════════════════════════════════════════════════════════
-//  SEND COMMAND TO ESP via Firebase /commands/pending
-// ══════════════════════════════════════════════════════════════════
-function showToast(msg) {
-  $('cmdToastMsg').textContent = msg;
-  $('cmdToast').classList.add('show');
-}
-function hideToast() { $('cmdToast').classList.remove('show'); }
-
-async function sendCommand(params) {
-  showToast('Sending command…');
-  try {
-    await db.ref('/commands/pending').set({
-      ...params,
-      _ts: firebase.database.ServerValue.TIMESTAMP
-    });
-    // Toast auto-hides once ESP deletes the node (or after 3s fallback)
-    setTimeout(hideToast, 3000);
-  } catch(e) {
-    hideToast();
-    alert('Failed to send command: ' + e.message);
-  }
-}
-
-// ══════════════════════════════════════════════════════════════════
-//  WAITING SCREEN
-// ══════════════════════════════════════════════════════════════════
-function showWaiting(msg) {
-  if (msg) $('waitStatus').textContent = msg;
-  $('waitingScreen').classList.remove('hidden');
-  $('liveBadge').textContent = 'ESP offline';
-}
-function hideWaiting() {
-  $('waitingScreen').classList.add('hidden');
-  $('liveBadge').textContent = 'Live';
-}
-
-// ══════════════════════════════════════════════════════════════════
-//  CLOCK
-// ══════════════════════════════════════════════════════════════════
-async function fetchClock() {
-  try {
-    const r = await fetch('https://worldtimeapi.org/api/timezone/Asia/Kolkata', {cache:'no-store'});
-    const d = await r.json();
-    clockOffset = new Date(d.datetime).getTime() - Date.now();
-    clockReady  = true;
-  } catch(e) { clockReady = false; }
-}
-function tickClock() {
-  const now = clockReady ? new Date(Date.now() + clockOffset) : new Date();
-  let hr = now.getHours(); const ampm = hr >= 12 ? 'PM' : 'AM';
-  hr = hr % 12; if (hr === 0) hr = 12;
-  const h  = String(hr).padStart(2,'0'), m = String(now.getMinutes()).padStart(2,'0'), s = String(now.getSeconds()).padStart(2,'0');
-  const mo = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][now.getMonth()];
-  const dy = String(now.getDate()).padStart(2,'0');
-  $('rtClock').textContent = `${h}:${m}:${s} ${ampm}  ${dy} ${mo}`;
-  const sysT = $('sysTime'); if (sysT) sysT.textContent = `${h}:${m} ${ampm}`;
-}
-fetchClock();
-setInterval(fetchClock, 30 * 60 * 1000);
-setInterval(tickClock, 1000);
-tickClock();
-
-// ══════════════════════════════════════════════════════════════════
-//  UI UPDATE
-// ══════════════════════════════════════════════════════════════════
-const mc  = pct => pct < 0 ? '#94a3b8' : pct < 20 ? '#ef4444' : pct < 40 ? '#f97316' : pct < 60 ? '#eab308' : '#22c55e';
-const setPill = (id, text, cls) => { const el = $(id); if (el) { el.textContent = text; el.className = 'pill ' + cls; } };
-const fmtDuration = sec => { if (!sec) return '—'; const m = Math.floor(sec/60), s = sec%60; return m>0?`${m}m ${s}s`:`${s}s`; };
-const fmtMl = ml => '~' + Math.round(ml);
-
-function updateUI(d, espIP) {
-  // ── System card ────────────────────────────────────────────────
-  const ipEl = $('sysESPIP');
-  if (ipEl) ipEl.textContent = espIP || '—';
-  $('sysUptime').textContent  = d.uptime || '—';
-  $('sysPlants').textContent  = `${d.activePlants} / ${d.totalPlants}`;
-
-  // ── Hardware card ──────────────────────────────────────────────
-  if (d.sensorHealth) d.sensorHealth.forEach((h,i)=>{
-    if (h==='connected')  setPill('soilStatus'+i,'Connected','pg');
-    else if (h==='checking') setPill('soilStatus'+i,'Checking…','pg-dim');
-    else                  setPill('soilStatus'+i,'Disconnected','pr');
-  });
-  if (d.flowHealth) d.flowHealth.forEach((h,i)=>{
-    if (h==='connected')  setPill('flowStatus'+i,'Connected','pg');
-    else if (h==='disconnected') setPill('flowStatus'+i,'Disconnected','pr');
-    else                  setPill('flowStatus'+i,'Idle','pg-dim');
-  });
-  if (d.relayHealth) d.relayHealth.forEach((h,i)=>{
-    if (h==='working')    setPill('relayStatus'+i,'Working','pg');
-    else if (h==='fault') setPill('relayStatus'+i,'Fault','pr');
-    else                  setPill('relayStatus'+i,'Unknown','pg-dim');
-  });
-  setPill('sdStatus', d.sdAvailable?'Available':'Not Available', d.sdAvailable?'pg':'pr');
-
-  // ── Manual toggle ──────────────────────────────────────────────
-  const isOn = d.manualMode;
-  $('manTog').classList.toggle('on', isOn);
-  $('togLabelAuto').classList.toggle('active', !isOn);
-  $('togLabelMan').classList.toggle('active', isOn);
-  $('manHint').textContent = isOn ? 'Override active — tap to disable' : 'Tap to enable manual relay override';
-  $('manHint').classList.toggle('active', isOn);
-
-  // ── Live readings ──────────────────────────────────────────────
-  if (d.plants.length > 0) {
-    const p = d.plants[0];
-    const lv = (id, val, cls) => { const el=$(id); el.textContent=val; el.className='live-val '+(cls||''); };
-    lv('lvSoil', p.soilPct>=0 ? p.soilPct+'%' : '—', p.soilPct > p.startPct ? 'ok' : 'warn');
-    lv('lvFlow', '~'+(Number(p.flowRate)||0).toFixed(3)+' L/min', p.relayOn ? 'ind' : 'dim');
-    const totalDel = (p.deliveredMl||0) + (p.pausedMl||0);
-    lv('lvVol',  fmtMl(totalDel)+' mL', p.relayOn ? 'ind' : 'dim');
-    lv('lvPump', p.relayOn ? 'ON 💧' : 'OFF', p.relayOn ? 'ok' : 'dim');
-    lv('lvMode', d.manualMode ? 'Manual' : 'Auto', d.manualMode ? 'warn' : 'ok');
-    lv('lvRaw',  d.rawADC && d.rawADC[0] !== undefined ? d.rawADC[0] : '—', 'dim');
-  } else {
-    ['lvSoil','lvFlow','lvVol','lvPump','lvMode','lvRaw'].forEach(id=>{
-      const el=$(id); el.textContent='—'; el.className='live-val dim';
-    });
-    $('lvMode').textContent = d.manualMode ? 'Manual' : 'Auto';
-  }
-
-  // ── Empty / plant cards ────────────────────────────────────────
-  const flowAccPct = d.flowAccuracyPct || 15;
-  $('emptyBox').style.display = d.plants.length ? 'none' : 'block';
-  const cards = $('plantCards');
-  cards.innerHTML = '';
-  d.plants.forEach(p => {
-    const col = mc(p.soilPct);
-    const isW = p.relayOn, isP = p.paused;
-    const totalDelivered = (p.deliveredMl||0) + (p.pausedMl||0);
-    const progPct = p.amount > 0 ? Math.min(100, Math.round((totalDelivered / p.amount)*100)) : 0;
-    const statusClass = {'Working':'pb','Monitoring':'pg-dim','Wet enough':'pg','Paused':'pa','Manual mode':'pm','Needs attention':'pr'}[p.status]||'pg-dim';
-    cards.innerHTML += `
-    <div class="card glass"><div class="c-in">
-      <div class="c-head">
-        <div style="min-width:0"><div class="c-name">${p.name}</div><div class="c-sub">${p.sensorName||'Sensor'} &nbsp;·&nbsp; ${p.relayName||'Relay'}</div></div>
-        <div class="c-badges">
-          <span class="pill ${statusClass}">${p.status}</span>
-          ${isW?'<span class="pill pb">💧 Watering</span>':''}
-          ${p.pausedMl>0&&!isW?`<span class="pill pa">⏸ ~${Math.round(p.pausedMl)}mL saved</span>`:''}
-        </div>
-      </div>
-      ${isW?`<div class="prog-row"><span class="prog-label">~${Math.round(totalDelivered)} / ${p.amount} mL</span><div class="prog-track"><div class="prog-fill" style="width:${progPct}%"></div></div><span class="prog-pct">${progPct}%</span></div>`:''}
-      <div class="metrics">
-        <div>
-          <div class="m-lbl">Soil Moisture</div>
-          <div class="m-val" style="color:${col}">${p.soilPct>=0?p.soilPct:'—'}<span class="unit">%</span></div>
-          <div class="mbar"><div class="mfill" style="width:${Math.max(0,p.soilPct||0)}%;background:${col}"></div></div>
-          <div class="m-sub">starts ≤ ${p.startPct}%</div>
-        </div>
-        <div>
-          <div class="m-lbl">Flow Rate</div>
-          <div class="m-val">~${(Number(p.flowRate)||0).toFixed(3)}<span class="unit">L/m</span></div>
-          <div class="m-sub">±${flowAccPct}% approx</div>
-        </div>
-        <div>
-          <div class="m-lbl">${isW?'Delivered':'Last Session'}</div>
-          <div class="m-val" style="font-size:16px">${isW?fmtMl(totalDelivered):fmtMl(p.lastSessionMl||0)}<span class="unit">mL</span></div>
-          <div class="m-sub">${isW?'target '+p.amount+' mL':'~ approx'}</div>
-        </div>
-        <div>
-          <div class="m-lbl">Pump</div>
-          <div class="m-val" style="color:${isW?'#22c55e':'#cbd5e1'};font-size:16px">${isW?'ON':'OFF'}</div>
-          <div class="m-sub">${p.relayName||'Relay'}</div>
-        </div>
-        <div>
-          <div class="m-lbl">Last Watered</div>
-          <div class="m-val" style="font-size:12px;padding-top:3px">${p.lastWatered||'Never'}</div>
-          <div class="m-sub">every ${p.freq}h</div>
-        </div>
-      </div>
-      <div class="c-divider"></div>
-      <div class="c-actions">
-        <button class="btn btn-b sm" onclick="openInfoModal(${p.index})">📊 Details</button>
-        <div class="c-actions-right">
-          ${d.manualMode ? `<button class="btn ${isP?'btn-p':'btn-a'} sm" onclick="togglePause(${p.index},${isP?0:1})">${isP?'▶ Resume':'⏸ Pause'}</button>` : ''}
-          ${d.manualMode && !isP && !isW ? `<button class="btn btn-b sm" onclick="sendWaterNow(${p.index})">💧 Water Now</button>` : ''}
-          ${d.manualMode && isW ? `<button class="btn btn-d sm" onclick="sendStopNow(${p.index})">⏹ Stop</button>` : ''}
-          <button class="btn btn-g sm" onclick="openEditModal(${p.index})">✏ Edit</button>
-          <button class="btn btn-d sm icon-only" onclick="openDelModal(${p.index})" title="Delete">🗑</button>
-        </div>
-      </div>
-    </div></div>`;
-  });
-
-  // ── Alerts ────────────────────────────────────────────────────
-  const al = $('alertList');
-  if (d.alerts && d.alerts.length) {
-    al.innerHTML = d.alerts.map(a => {
-      const parts = a.split('|');
-      if (parts.length >= 3) {
-        const ago = parts[0].trim(), time = parts[1].trim(), msg = parts.slice(2).join('|').trim();
-        return `<div class="arow"><span class="a-t">${ago} · ${time}</span><span class="a-m">${msg}</span></div>`;
-      }
-      return `<div class="arow"><span class="a-t">—</span><span class="a-m">${a}</span></div>`;
-    }).join('');
-  } else {
-    al.innerHTML = '<div class="arow"><span class="a-t">—</span><span class="a-m">No alerts yet</span></div>';
-  }
-
-  // ── Refresh info modal if open ─────────────────────────────────
-  if (infoIdx >= 0) openInfoModal(infoIdx);
-}
-
-// ══════════════════════════════════════════════════════════════════
-//  MANUAL MODAL
-// ══════════════════════════════════════════════════════════════════
-function openManModal() {
-  const isOn = dash && dash.manualMode;
-  $('manModalTitle').textContent = isOn ? 'Disable Manual Override' : 'Enable Manual Override';
-  $('manModalDesc').textContent  = isOn
-    ? 'Automation will resume and plants will be watered on schedule.'
-    : 'Automation pauses. You can still pause/resume individual plants.';
-  const act = $('manModalActions'); act.innerHTML = '';
-  const cancel = document.createElement('button');
-  cancel.className = 'btn btn-g'; cancel.textContent = 'Cancel'; cancel.onclick = closeManModal;
-  if (isOn) {
-    const b = document.createElement('button'); b.className = 'btn btn-p';
-    b.textContent = '✅ Disable Override'; b.onclick = () => setManual(0, 0);
-    act.appendChild(cancel); act.appendChild(b);
-  } else {
-    const b = document.createElement('button'); b.className = 'btn btn-b';
-    b.textContent = '⚡ Enable Override'; b.onclick = () => setManual(1, 0);
-    act.appendChild(cancel); act.appendChild(b);
-  }
-  $('manOvl').classList.add('show');
-}
-function closeManModal() { $('manOvl').classList.remove('show'); }
-async function setManual(state, offAll) {
-  await sendCommand({ cmd: 'manualMode', state, offAll });
-  closeManModal();
-}
-
-// ══════════════════════════════════════════════════════════════════
-//  CREATE / EDIT MODAL
-// ══════════════════════════════════════════════════════════════════
-function openCreateModal() {
-  if (!dash) return;
-  $('fTitle').textContent = 'Add New Plant'; $('eIdx').value = '-1';
-  $('pName').value = ''; $('wAmt').value = ''; $('fHrs').value = '24'; $('mStart').value = '';
-  fillSensors(null, -1); fillRelays(null, -1);
-  $('formOvl').classList.add('show');
-}
-function openEditModal(idx) {
-  const p = dash && dash.plants.find(x => x.index === idx); if (!p) return;
-  $('fTitle').textContent = 'Edit Plant'; $('eIdx').value = idx;
-  $('pName').value = p.name; $('wAmt').value = p.amount; $('fHrs').value = p.freq; $('mStart').value = p.startPct;
-  fillSensors(p.sensorId, idx); fillRelays(p.relayId, idx);
-  $('formOvl').classList.add('show');
-}
-function closeFModal() { $('formOvl').classList.remove('show'); }
-
-function fillSensors(currentId, editIdx) {
-  const el = $('sSel'); el.innerHTML = ''; let avail = 0;
-  (dash.sensors||[]).forEach(s => {
-    const opt = document.createElement('option'); opt.value = s.id;
-    const isOwn = Number(s.id) === Number(currentId);
-    const taken = s.assigned && !isOwn && dash.plants.length > 0;
-    if (taken) {
-      opt.textContent = s.name + ' — in use by ' + (s.owner||'another');
-      opt.disabled = true; opt.style.color = '#bbb';
-    } else {
-      opt.textContent = s.name + (isOwn && s.assigned ? ' (current)' : '');
-      avail++;
-    }
-    el.appendChild(opt);
-  });
-  if (currentId !== null && currentId !== undefined) el.value = String(currentId);
-  $('warnSensor').style.display = avail === 0 ? 'block' : 'none';
-}
-    if (takenByOther) {
-      opt.textContent = s.name + ' — in use by ' + (s.owner || 'another');
-      opt.disabled = true; opt.style.color = '#bbb';
-    } else {
-      opt.textContent = s.name + (Number(s.id) === Number(currentId) && s.assigned ? ' (current)' : '');
-      avail++;
-    }
-    el.appendChild(opt);
-  });
-  if (currentId !== null && currentId !== undefined) el.value = String(currentId);
-  $('warnSensor').style.display = avail === 0 ? 'block' : 'none';
-}
-
-function fillRelays(currentId, editIdx) {
-  const el = $('rSel'); el.innerHTML = ''; let avail = 0;
-  (dash.relays||[]).forEach(r => {
-    const opt = document.createElement('option'); opt.value = r.id;
-    const isOwn = Number(r.id) === Number(currentId);
-    const taken = r.assigned && !isOwn && dash.plants.length > 0;
-    if (taken) {
-      opt.textContent = r.name + ' — in use by ' + (r.owner||'another');
-      opt.disabled = true; opt.style.color = '#bbb';
-    } else {
-      opt.textContent = r.name + (isOwn && r.assigned ? ' (current)' : '');
-      avail++;
-    }
-    el.appendChild(opt);
-  });
-  if (currentId !== null && currentId !== undefined) el.value = String(currentId);
-  $('warnRelay').style.display = avail === 0 ? 'block' : 'none';
-}
-async function savePlant() {
-  const idx  = $('eIdx').value;
-  const name = $('pName').value.trim();
-  const sEl  = $('sSel'), rEl = $('rSel');
-  const sensor = Number(sEl.value), relay = Number(rEl.value);
-  const amt  = Number($('wAmt').value), freq = Number($('fHrs').value), ms = Number($('mStart').value);
-  if (sEl.options[sEl.selectedIndex]?.disabled) { alert('Selected sensor is already in use.'); return; }
-  if (rEl.options[rEl.selectedIndex]?.disabled) { alert('Selected relay is already in use.');  return; }
-  if (!name || !amt || !ms && ms !== 0) { alert('Please fill in all fields.'); return; }
-  if (ms < 0 || ms > 99)  { alert('Start moisture must be 0–99%.'); return; }
-  if (amt < 1)             { alert('Target volume must be at least 1 mL.'); return; }
-
-  const cmd = Number(idx) >= 0
-    ? { cmd: 'editPlant',  index: Number(idx), name, sensor, relay, amount: amt, freq, mstart: ms }
-    : { cmd: 'addPlant',                        name, sensor, relay, amount: amt, freq, mstart: ms };
-
-  closeFModal();
-  await sendCommand(cmd);
-}
-
-// ══════════════════════════════════════════════════════════════════
-//  DELETE
-// ══════════════════════════════════════════════════════════════════
-function openDelModal(idx)  { delIdx = idx; $('delOvl').classList.add('show'); }
-function closeDelModal()    { delIdx = -1;  $('delOvl').classList.remove('show'); }
-async function confirmDelete() {
-  if (delIdx < 0) return;
-  const idx = delIdx;
-  closeDelModal();
-  await sendCommand({ cmd: 'deletePlant', index: idx });
-}
-
-// ══════════════════════════════════════════════════════════════════
-//  PAUSE / WATER NOW / STOP
-// ══════════════════════════════════════════════════════════════════
-async function togglePause(idx, pause) {
-  await sendCommand({ cmd: 'pausePlant', index: idx, paused: pause });
-}
-async function sendWaterNow(idx) {
-  await sendCommand({ cmd: 'waterNow', index: idx });
-}
-async function sendStopNow(idx) {
-  await sendCommand({ cmd: 'stopNow', index: idx });
-}
-
-// ══════════════════════════════════════════════════════════════════
-//  INFO MODAL
-// ══════════════════════════════════════════════════════════════════
-function openInfoModal(idx) {
-  const p = dash && dash.plants.find(x => x.index === idx); if (!p) return;
-  infoIdx = idx;
-  $('infoPlantName').textContent = p.name;
-  $('infoPlantSub').textContent  = (p.sensorName||'Sensor') + ' · ' + (p.relayName||'Relay');
-  $('iSoil').innerHTML    = (p.soilPct>=0?p.soilPct:'—') + '<span class="unit">%</span>';
-  $('iLastMl').innerHTML  = fmtMl(p.lastSessionMl||0) + '<span class="unit">mL</span>';
-  $('iLastTime').textContent = p.lastWatered || 'never';
-  $('iWeekMl').innerHTML  = fmtMl(p.weekMl||0) + '<span class="unit">mL</span>';
-  $('iTotalMl').innerHTML = fmtMl(p.totalMl||0) + '<span class="unit">mL</span>';
-  $('iTarget').innerHTML  = p.amount + '<span class="unit">mL</span>';
-  $('iThresh').innerHTML  = p.startPct + '<span class="unit">%</span>';
-  $('iFreq').innerHTML    = p.freq + '<span class="unit">h</span>';
-  $('iSessCount').textContent = p.sessions ? p.sessions.length : 0;
-
-  const tbody = $('sessBody'); tbody.innerHTML = '';
-  const sessions = p.sessions || [];
-  if (!sessions.length) {
-    tbody.innerHTML = '<tr><td colspan="5" class="sess-empty">No sessions yet.</td></tr>';
-  } else {
-    [...sessions].reverse().forEach((s, i) => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `<td style="color:#94a3b8;font-size:10.5px">${sessions.length-i}</td>
-        <td style="font-family:monospace;font-size:11px">${s.startLabel||'—'}</td>
-        <td>${fmtDuration(s.durationSec)}</td>
-        <td><strong>${fmtMl(s.deliveredMl||0)}</strong> mL</td>
-        <td><span class="sess-badge ${s.manual?'manual':'auto'}">${s.manual?'Manual':'Auto'}</span></td>`;
-      tbody.appendChild(tr);
-    });
-  }
-  $('infoOvl').classList.add('show');
-}
-function closeInfoModal() { $('infoOvl').classList.remove('show'); infoIdx = -1; }
-
-// Close modals on overlay click
-['formOvl','delOvl','manOvl','infoOvl'].forEach(id => {
-  $(id).addEventListener('click', e => { if (e.target === $(id)) $(id).classList.remove('show'); });
-});
-</script>
+</div><!-- end #dashMain -->
 </body>
 </html>
